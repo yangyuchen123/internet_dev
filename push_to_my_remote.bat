@@ -11,16 +11,16 @@ git pull %REMOTE_NAME% %LOCAL_BRANCH%
 
 :: 检查是否有变更
 git status
-set /p "COMMIT_MSG=commit msg: "
+set /p "COMMIT_MSG=>>>>>commit msg: "
 
 :: 提交变更
 git add .
 git commit -m "!COMMIT_MSG!"
 
 :: 推送到远程仓库
-echo pushing %REMOTE_NAME%/%LOCAL_BRANCH%...
+echo >>>>>pushing %REMOTE_NAME%/%LOCAL_BRANCH%...
 git push %REMOTE_NAME% %LOCAL_BRANCH%
 
-echo complete.............
+echo >>>>>complete.............
 endlocal
 
