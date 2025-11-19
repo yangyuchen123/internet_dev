@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    locale: zh_CN
+    time-zone: GMT+8
+    default-property-inclusion: NON_NULL
+  datasource:
+    url: jdbc:mysql://localhost:3306/physical_health_agent_db
+    username: root
+    password: chenhao20030210
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  #  configuration:
+  #    map-underscore-to-camel-case: true         # mybatis-plus不用设置了
+  #    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl      # 打印SQL语句
+  mapper-locations: classpath:mapper/*.xml
+  type-aliases-package: com.example.project.module.*.entity
+
+jwt:
+  secret: ${JWT_SECRET:bXlTdXBlclNlY3JldEtleTEyMzQ1Njc4OTBhYmNkZWYxMjM0NTY3ODkwYWJjZGVm}
+  expiration: 86400000
+  header: Authorization
+  prefix: Bearer
