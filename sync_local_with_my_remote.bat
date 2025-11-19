@@ -1,15 +1,19 @@
 @echo off
+
 setlocal
 
-:: 配置仓库信息
-set "LOCAL_BRANCH=feature/yangyuchen"
+:: 加载环境变量
+call load_env.bat || exit /b 1
+
+:: 设置远程仓库名称（默认使用origin）
 set "REMOTE_NAME=origin"
 
-echo >>>>>syncing %REMOTE_NAME%/%LOCAL_BRANCH%...
+echo 同步 %REMOTE_NAME%/%MY_BRANCH_NAME%...
 git fetch %REMOTE_NAME%
-git checkout %LOCAL_BRANCH%
-git pull %REMOTE_NAME% %LOCAL_BRANCH%
+git checkout %MY_BRANCH_NAME%
+git pull %REMOTE_NAME% %MY_BRANCH_NAME%
 
-echo >>>>>complete.............
+echo 本地仓库已与远程同步完成！
 endlocal
+pause
 

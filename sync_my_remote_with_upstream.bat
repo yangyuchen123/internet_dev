@@ -1,33 +1,35 @@
 @echo off
+
 setlocal
 
-:: 配置仓库信息
+:: 加载环境变量
+call load_env.bat || exit /b 1
+
+:: 设置远程仓库名称
 set "UPSTREAM_NAME=upstream"  :: 原主仓库的远程名
-set "UPSTREAM_REPO=https://github.com/HuxJiang/ai_agent_platform"
 set "MY_REMOTE=origin"        :: 自己 fork 仓库的远程名
-set "MY_BRANCH=feature/yangyuchen"
-set "UPSTREAM_BRANCH=main"
 
 :: 检查是否已添加原主仓库远程
 git remote | findstr /i "%UPSTREAM_NAME%" >nul
 if %errorlevel% neq 0 (
-    echo >>>>>adding %UPSTREAM_NAME% %UPSTREAM_REPO%...
-    git remote add %UPSTREAM_NAME% %UPSTREAM_REPO%
+    echo 添加 %UPSTREAM_NAME% %UPSTREAM_REPO_URL%...
+    git remote add %UPSTREAM_NAME% %UPSTREAM_REPO_URL%
 )
 
 :: 拉取原主仓库最新代码
-echo >>>>>fetching %UPSTREAM_NAME%...
+echo 拉取 %UPSTREAM_NAME% 最新代码...
 git fetch %UPSTREAM_NAME%
 
 :: 合并到本地分支
-echo >>>>>merging %UPSTREAM_NAME%/%UPSTREAM_BRANCH% into %MY_BRANCH%...
-git checkout %MY_BRANCH%
-git merge %UPSTREAM_NAME%/%UPSTREAM_BRANCH%
+echo 合并 %UPSTREAM_NAME%/%UPSTREAM_BRANCH_NAME% 到 %MY_BRANCH_NAME%...
+git checkout %MY_BRANCH_NAME%
+git merge %UPSTREAM_NAME%/%UPSTREAM_BRANCH_NAME%
 
 :: 推送到自己的远程仓库
-echo >>>>>pushing %MY_REMOTE%/%MY_BRANCH%...
-git push %MY_REMOTE% %MY_BRANCH%
+echo 推送代码到 %MY_REMOTE%/%MY_BRANCH_NAME%...
+git push %MY_REMOTE% %MY_BRANCH_NAME%
 
-echo >>>>>complete.............
+echo 同步上游仓库到我的远程仓库完成！
 endlocal
+pause
 

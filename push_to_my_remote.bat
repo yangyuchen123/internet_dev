@@ -1,26 +1,25 @@
 @echo off
-setlocal enabledelayedexpansion
 
-:: 配置仓库信息
-set "LOCAL_BRANCH=feature/yangyuchen"
-set "REMOTE_NAME=origin"  :: 通常 fork 仓库的远程名为 origin
+setlocal
 
-:: 拉取最新代码避免冲突
-echo pulling
-git pull %REMOTE_NAME% %LOCAL_BRANCH%
+:: 加载环境变量
+call load_env.bat || exit /b 1
 
-:: 检查是否有变更
+:: 拉取最新代码
+echo 拉取远程仓库 %MY_REPO_URL%:%MY_BRANCH_NAME% 最新代码...
+git pull origin %MY_BRANCH_NAME%
+
+:: 提交操作
 git status
-set /p "COMMIT_MSG=>>>>>commit msg: "
-
-:: 提交变更
+set /p "COMMIT_MSG=请输入提交信息: "
 git add .
-git commit -m "!COMMIT_MSG!"
+git commit -m "%COMMIT_MSG%"
 
-:: 推送到远程仓库
-echo >>>>>pushing %REMOTE_NAME%/%LOCAL_BRANCH%...
-git push %REMOTE_NAME% %LOCAL_BRANCH%
+:: 推送到远程
+echo 推送到 %MY_REPO_URL%:%MY_BRANCH_NAME%...
+git push origin %MY_BRANCH_NAME%
 
-echo >>>>>complete.............
+echo 操作完成！
 endlocal
+pause
 
