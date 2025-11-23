@@ -44,8 +44,8 @@ def merge_results(vec_items: List[Dict], kw_items: List[Dict], alpha: float = 0.
     # 计算融合分数
     res = []
     for item in by_id.values():
-        sv = float(item.get('_norm_score_vec', 0.0)) if '_norm_score_vec' in item else 0.0
-        sk = float(item.get('_norm_score_kw', 0.0)) if '_norm_score_kw' in item else 0.0
+        sv = float(item.get('_norm_score_vec', 0.5)) 
+        sk = float(item.get('_norm_score_kw', 0.0)) 
         score = alpha * sv + beta * sk
         item['score'] = float(score)
         res.append(item)

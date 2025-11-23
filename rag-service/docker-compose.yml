@@ -9,6 +9,7 @@ services:
       - ../model:/app/model:ro
     environment:
         - RAG_MODEL_NAME=/app/model
+        - RAG_ON_DOCKER=Y
         - RAG_DB_HOST=rag-mysql
         - RAG_DB_PORT=3306
         - RAG_DB_USER=demo_user
