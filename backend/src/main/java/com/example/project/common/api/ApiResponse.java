@@ -25,15 +25,15 @@ public class ApiResponse<T> {
     }
 
     public static <T> ApiResponse<T> ok() {
-        return new ApiResponse<>(0, "操作成功", null);
+        return new ApiResponse<>(200, "操作成功", null);
     }
 
     public static <T> ApiResponse<T> ok(T data) {
-        return new ApiResponse<>(0, "操作成功", data);
+        return new ApiResponse<>(200, "操作成功", data);
     }
 
     public static <T> ApiResponse<T> ok(String message, T data) {
-        return new ApiResponse<>(0, message, data);
+        return new ApiResponse<>(200, message, data);
     }
 
     public static <T> ApiResponse<T> fail(int code, String message) {

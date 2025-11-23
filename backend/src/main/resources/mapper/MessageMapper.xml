@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.example.project.module.message.mapper.MessageMapper">
+
+    <resultMap id="MessageResultMap" type="com.example.project.module.message.entity.Message">
+        <id property="id" column="id" />
+        <result property="conversationId" column="conversation_id" />
+        <result property="role" column="role" />
+        <result property="content" column="content" />
+        <result property="type" column="type" />
+        <result column="metadata" property="metadata"
+                typeHandler="com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler" />
+        <result property="createdAt" column="created_at"/>
+        <result property="updatedAt" column="updated_at"/>
+    </resultMap>
+
+    <insert id="insertMessage" useGeneratedKeys="true" keyProperty="id" keyColumn="id">
+        INSERT INTO message (conversation_id, role, content, type, metadata, created_at, updated_at)
+        VALUES (#{conversationId}, #{role}, #{content}, #{type}, #{metadata, jdbcType=OTHER, typeHandler=com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler}, #{createdAt}, #{updatedAt})
+    </insert>
+
+</mapper>

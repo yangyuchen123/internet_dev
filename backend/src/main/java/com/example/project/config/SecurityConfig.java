@@ -1,5 +1,6 @@
 package com.example.project.config;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -9,6 +10,7 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 /**
  * Security配置
@@ -16,6 +18,9 @@ import org.springframework.security.web.SecurityFilterChain;
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+
+    @Autowired
+    private JwtAuthenticationFilter jwtAuthenticationFilter;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -27,25 +32,31 @@ public class SecurityConfig {
         http
                 // 禁用CSRF
                 .csrf(AbstractHttpConfigurer::disable)
+                // 禁用 HTTP Basic 和 Form Login
+                .httpBasic(AbstractHttpConfigurer::disable)
+                .formLogin(AbstractHttpConfigurer::disable)
                 // 配置请求授权
                 .authorizeHttpRequests(auth -> auth
                         // 允许访问的路径
                         .requestMatchers(
                                 "/api/user/register",
                                 "/api/user/login",
-                                "/api/admin/login",
+                                "/api/user/refresh",
                                 "/doc.html",
                                 "/webjars/**",
                                 "/swagger-resources/**",
                                 "/v3/api-docs/**"
                         ).permitAll()
                         // 其他请求需要认证
-                        .anyRequest().permitAll() // 开发阶段暂时允许所有请求
+                        // .anyRequest().permitAll() // 开发阶段暂时允许所有请求
+                        .anyRequest().authenticated()  // 实际工程部署阶段，启用认证
                 )
                 // 配置Session管理
                 .sessionManagement(session -> session
                         .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
-                );
+                )
+                // 添加JWT认证过滤器
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
