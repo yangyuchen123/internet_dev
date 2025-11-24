@@ -5,10 +5,10 @@ services:
     image: mysql:8.0
     container_name: ${PROJECT_NAME:-ai-agent-platform}-mysql
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_agent_db}
-      MYSQL_USER: ${MYSQL_USER:-demo_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-demo_pass_123}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     ports:
       - "${MYSQL_PORT:-3306}:3306"
     command: [
@@ -25,7 +25,7 @@ services:
       - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root123456}"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}"]
       timeout: 20s
       retries: 10
       interval: 10s
@@ -37,8 +37,8 @@ services:
     environment:
       PMA_HOST: mysql
       PMA_PORT: 3306
-      PMA_USER: ${MYSQL_USER:-demo_user}
-      PMA_PASSWORD: ${MYSQL_PASSWORD:-demo_pass_123}
+      PMA_USER: ${MYSQL_USER}
+      PMA_PASSWORD: ${MYSQL_PASSWORD}
     ports:
       - "${PMA_PORT:-8081}:80"
     depends_on:
@@ -62,27 +62,34 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
 
       # 数据库配置（连接 mysql 服务）
-      DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ai_agent_db}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
-      DATASOURCE_USERNAME: root
-      DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
 
       # 或者使用环境变量（推荐）
-      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE:-ai_agent_db}?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&characterEncoding=UTF-8
-      SPRING_DATASOURCE_USERNAME: root
-      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
+      SPRING_DATASOURCE_URL: ${SPRING_DATASOURCE_URL}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD}
 
       # Java 运行参数
       JAVA_OPTS: ${JAVA_OPTS:--Xms512m -Xmx1g}
 
+      # Redis 配置（Docker 部署时指向 redis 服务）
+      # REDIS_HOST: ${REDIS_HOST}
+      # REDIS_PORT: ${REDIS_PORT}
+      # REDIS_PASSWORD: ${REDIS_PASSWORD}
+
       # 时区
       TZ: ${TZ:-Asia/Shanghai}
-    volumes:
-      - backend_logs:/app/logs
+    # volumes:
+    #   - redis_data:/app/logs
     networks:
       - app-network
     depends_on:
       mysql:
         condition: service_healthy
+      # - mysql
+      # - redis
 
 
   # web-frontend:
@@ -103,13 +110,35 @@ services:
   #   depends_on:
   #     - backend  # ⭐ 等待后端服务启动（不要求健康检查）
 
+  # redis:
+  #   image: redis:7-alpine
+  #   container_name: ${PROJECT_NAME:-ai-agent-platform}-redis
+  #   command: ["redis-server", "--appendonly", "yes"]
+  #   environment:
+  #     SPRING_REDIS_HOST: ${SPRING_REDIS_HOST:-redis}
+  #     SPRING_REDIS_PORT: ${SPRING_REDIS_PORT:-6379}
+  #     SPRING_REDIS_PASSWORD: ${SPRING_REDIS_PASSWORD:-}
+  #   ports:
+  #     - "${SPRING_REDIS_PORT:-6379}:6379"
+  #   volumes:
+  #     - redis_data:/data
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
+  #   healthcheck:
+  #     test: ["CMD", "sh", "-c", "if [ -z \"${SPRING_REDIS_PASSWORD:-}\" ]; then redis-cli ping; else redis-cli -a \"${SPRING_REDIS_PASSWORD:-}\" ping; fi"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 5
+  #     start_period: 10s
+
 
 volumes:
   backend_mysql_data:
-    driver: local
-  backend_logs:
     driver: local
 
 networks:
   app-network:
     driver: bridge
+  # redis_data:
+  #   driver: local

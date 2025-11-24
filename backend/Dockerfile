@@ -1,4 +1,4 @@
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre-ubi10-minimal
 
 LABEL maintainer="ai-agent-platform-backend"
 
@@ -7,7 +7,9 @@ RUN mkdir -p /app
 WORKDIR /app
 
 # 复制 JAR 包
-COPY target/*.jar app.jar
+# 注意：这里假设 target 目录下只有一个主 JAR 包，或者指定具体名称
+COPY target/project-*.jar /app/
+RUN mv /app/project-*.jar /app/app.jar || true && rm -f /app/*.original
 
 # 设置时区
 ENV TZ=Asia/Shanghai

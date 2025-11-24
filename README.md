@@ -48,7 +48,7 @@ docker build -t ai-agent-backend:test .
 一键部署启动指令：
 
 ```
-docker-compose -f docker-compose.prod.yml -p ai-platform up -d
+docker-compose -f docker-compose.prod.yml -p ai-platform up -d --build
 ```
 
 开发环境一键配置指令：
