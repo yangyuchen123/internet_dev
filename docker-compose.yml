@@ -6,7 +6,7 @@ services:
     container_name: ${PROJECT_NAME:-ai-agent-platform}-mysql
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root123456}
-      MYSQL_DATABASE: ${MYSQL_DATABASE:-health_agent_db}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-ai_agent_db}
       MYSQL_USER: ${MYSQL_USER:-demo_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-demo_pass_123}
     ports:
@@ -19,7 +19,8 @@ services:
       "--explicit_defaults_for_timestamp"
     ]
     volumes:
-      - mysql_data:/var/lib/mysql
+      - backend_mysql_data:/var/lib/mysql
+      - ./backend/database/init:/docker-entrypoint-initdb.d
     networks:
       - app-network
     restart: unless-stopped
@@ -84,7 +85,7 @@ services:
         condition: service_healthy
 
 volumes:
-  mysql_data:
+  backend_mysql_data:
     driver: local
   backend_logs:
     driver: local

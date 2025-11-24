@@ -29,7 +29,7 @@
 - 克隆仓库代码并切换到最新发布的稳定版本；
 
   ```shell
-  git clone git@github.com:HuxJiang/internet_dev.git
+  git clone https://github.com/HuxJiang/ai_agent_platform.git
   git checkout release
   ```
 - 下载
