@@ -1,5 +1,5 @@
 // API基础URL
-const API_BASE_URL = 'http://localhost:8080/api' // 这将由开发服务器代理到后端
+const API_BASE_URL = '/api'
 
 /**
  * 获取存储在localStorage中的访问令牌
@@ -53,21 +53,21 @@ export async function fetchAPI(endpoint, options = {}) {
     'Content-Type': 'application/json',
     ...options.headers
   }
-  
+
   // 如果有访问令牌，则添加到请求头
   const token = getAccessToken()
   if (token) {
     headers['Authorization'] = `Bearer ${token}`
   }
-  
+
   const config = {
     ...options,
     headers
   }
-  
+
   try {
     const response = await fetch(url, config)
-    
+
     // 检查响应状态
     if (!response.ok) {
       // 尝试解析错误响应
@@ -77,23 +77,23 @@ export async function fetchAPI(endpoint, options = {}) {
       } catch (e) {
         errorData = { message: '请求失败，请稍后重试' }
       }
-      
+
       throw new Error(errorData.message || `HTTP error! status: ${response.status}`)
     }
-    
+
     // 对于204 No Content响应，不尝试解析JSON
     if (response.status === 204) {
       return null
     }
-    
+
     // 解析JSON响应
     const data = await response.json()
-    
+
     // 根据后端实际返回的状态码调整，成功状态码为200
     if (data.code !== 200) {
       throw new Error(data.message || 'API返回错误')
     }
-    
+
     return data.data
   } catch (error) {
     console.error('API请求错误:', error)
@@ -109,9 +109,9 @@ export async function get(endpoint, params = {}) {
   const queryString = Object.keys(params)
     .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
     .join('&')
-  
+
   const url = queryString ? `${endpoint}?${queryString}` : endpoint
-  
+
   return fetchAPI(url, {
     method: 'GET'
   })
@@ -156,7 +156,7 @@ export const authAPI = {
   isLoggedIn() {
     return !!localStorage.getItem('access_token')
   },
-  
+
   /**
    * 用户登录
    */
@@ -166,7 +166,7 @@ export const authAPI = {
         username,
         password
       })
-      
+
       // 保存token和用户信息
       if (response && response.access_token) {
         setAccessToken(response.access_token)
@@ -180,14 +180,14 @@ export const authAPI = {
           lastLoginTime: response.lastLoginTime
         })
       }
-      
+
       return response
     } catch (error) {
       console.error('登录失败:', error)
       throw error
     }
   },
-  
+
   /**
    * 用户注册
    */
@@ -204,7 +204,7 @@ export const authAPI = {
       throw error
     }
   },
-  
+
   /**
    * 刷新令牌
    */
@@ -223,7 +223,7 @@ export const authAPI = {
       throw error
     }
   },
-  
+
   /**
    * 退出登录
    */
@@ -240,14 +240,14 @@ export const authAPI = {
       removeUserInfo()
     }
   },
-  
+
   /**
    * 检查是否已登录
    */
   isLoggedIn() {
     return getAccessToken() !== null
   },
-  
+
   /**
    * 获取当前用户信息
    */
