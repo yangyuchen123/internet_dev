@@ -2,6 +2,8 @@ import { createRouter, createWebHistory } from 'vue-router'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import HomeView from '../views/HomeView.vue'
+import AgentsView from '../views/AgentsView.vue'
+import AgentUpdateView from '../views/AgentUpdateView.vue'
 
 const routes = [
   {
@@ -28,6 +30,22 @@ const routes = [
     path: '/home',
     name: 'Home',
     component: HomeView,
+    meta: {
+      requiresAuth: true // 需要登录才能访问
+    }
+  },
+  {
+    path: '/agents',
+    name: 'Agents',
+    component: AgentsView,
+    meta: {
+      requiresAuth: true // 需要登录才能访问
+    }
+  },
+  {
+    path: '/agent/update/:id',
+    name: 'AgentUpdate',
+    component: AgentUpdateView,
     meta: {
       requiresAuth: true // 需要登录才能访问
     }

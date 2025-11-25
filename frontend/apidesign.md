@@ -1,3 +1,27 @@
+1. 项目系统环境
+本地JDK：JDK-24
+云服务器部署：eclipse-temurin:21-jre（暂定）
+https://github.com/HuxJiang/internet_dev#
+项目仓库链接：git@github.com:HuxJiang/internet_dev.git；
+2. 数据库设计
+2.1 数据库表设计
+用户表user、知识库表knowledge、角色表role、权限表permission、用户角色关联表user_role、角色权限关联表role_permission、智能体表agent、工作流表workflow、文档表document、插件表plugin、聊天会话表chat_session、聊天信息表chat_message
+目前先定义的表：用户表user、角色表role、权限表permission、用户角色关联表user_role、角色权限关联表role_permission、智能体表agent、会话表conversation、消息表message
+
+3. 前端页面设计
+登录页            /login
+注册页            /register
+主页                /home
+用户页            /user/{username}
+插件页            /plugins
+知识库页        /knowledge
+工作流设计页 /workflow
+智能体管理页 /agents
+
+路由规则
+未携带token  统一重定向到 /login
+
+
 4. 接口设计
 基础信息
 
@@ -8,8 +32,15 @@ Authorization: Bearer {access_token}
 通用响应格式
 json
 {"code": 200,"message": "success","data": {},"timestamp": 1640995200000}
-错误码说明
-暂时无法在飞书文档外展示此内容
+错误码说明:
+错误码	说明
+200	成功
+400	请求参数错误
+401	未授权
+403	权限不足
+404	资源不存在
+500	服务器内部错误
+999	系统错误
 
 用户认证模块
 4.1 用户登录（该接口已写好）
@@ -190,7 +221,7 @@ json
 ---
 会话管理模块
 4.8 创建会话（该接口已写好）
-端点: POST /conversations
+端点: POST http://localhost:8080/api/conversation/create_conversation
 请求参数:
 {
     "agent_id": 1,
@@ -329,7 +360,7 @@ json
     "timestamp": 1763719250143
 }
 
-4.13 流式消息 (WebSocket)
+4.13 流式消息 (WebSocket)     这个功能我想的是后续再来，目前还没有调通
 连接地址: wss://api.agent-platform.com/v1/ws/conversations/{conversation_id}
 消息格式:
 json

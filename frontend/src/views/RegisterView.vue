@@ -157,7 +157,11 @@ export default {
       this.validateField('password')
       this.validateField('confirmPassword')
       
-      return Object.keys(this.errors).length === 0
+      // 检查是否有任何错误
+      return this.errors.username === '' && 
+             this.errors.email === '' && 
+             this.errors.password === '' && 
+             this.errors.confirmPassword === ''
     },
     
     // 处理注册

@@ -99,7 +99,13 @@ export default {
       this.validateField('username')
       this.validateField('password')
       
-      return Object.keys(this.errors).length === 0
+      // 检查是否有任何错误
+      for (const key in this.errors) {
+        if (this.errors[key] !== '') {
+          return false
+        }
+      }
+      return true
     },
     
     // 处理登录

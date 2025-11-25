@@ -179,12 +179,12 @@ const authAPI = {
   /**
    * 用户注册
    */
-  async register(username, password, nickname = '') {
+  async register(username, password, email) {
     try {
       const response = await post('/user/register', {
         username,
         password,
-        nickname
+        email
       })
       return response
     } catch (error) {
@@ -243,6 +243,63 @@ const authAPI = {
   }
 }
 
+/**
+ * 智能体相关API
+ */
+const agentAPI = {
+  /**
+   * 获取智能体列表
+   */
+  async getAgentList(params = {}) {
+    try {
+      const response = await get('/agent/get_agent_list', params)
+      return response
+    } catch (error) {
+      console.error('获取智能体列表失败:', error)
+      throw error
+    }
+  },
+  
+  /**
+   * 创建智能体
+   */
+  async createAgent(data) {
+    try {
+      const response = await post('/agent/create_agent', data)
+      return response
+    } catch (error) {
+      console.error('创建智能体失败:', error)
+      throw error
+    }
+  },
+  
+  /**
+   * 更新智能体
+   */
+  async updateAgent(agentId, data) {
+    try {
+      const response = await put(`/agent/update_agent/${agentId}`, data)
+      return response
+    } catch (error) {
+      console.error('更新智能体失败:', error)
+      throw error
+    }
+  },
+  
+  /**
+   * 删除智能体
+   */
+  async deleteAgent(agentId) {
+    try {
+      const response = await del(`/agent/delete_agent/${agentId}`)
+      return response
+    } catch (error) {
+      console.error('删除智能体失败:', error)
+      throw error
+    }
+  }
+}
+
 // 导出API工具
 export default {
   get,
@@ -250,6 +307,7 @@ export default {
   put,
   delete: del,
   auth: authAPI,
+  agent: agentAPI,
   getAccessToken,
   setAccessToken,
   removeAccessToken,
