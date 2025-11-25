@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.6
+
 FROM maven:3.9.9-eclipse-temurin-21 AS builder
 
 WORKDIR /workspace
@@ -6,11 +8,15 @@ COPY pom.xml .
 COPY mvnw mvnw.cmd ./
 COPY .mvn ./.mvn
 
-RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
+RUN chmod +x mvnw
+
+RUN --mount=type=cache,target=/root/.m2,sharing=locked,id=maven-repo \
+	./mvnw -B dependency:go-offline
 
 COPY src ./src
 
-RUN ./mvnw -B clean package -DskipTests
+RUN --mount=type=cache,target=/root/.m2,sharing=locked,id=maven-repo \
+	./mvnw -B clean package -DskipTests
 
 FROM eclipse-temurin:21-jre
 

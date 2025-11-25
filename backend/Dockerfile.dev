@@ -1,3 +1,5 @@
+# syntax=docker/dockerfile:1.6
+
 FROM maven:3.9.9-eclipse-temurin-21
 
 WORKDIR /workspace
@@ -6,7 +8,10 @@ COPY pom.xml .
 COPY mvnw mvnw.cmd ./
 COPY .mvn ./.mvn
 
-RUN chmod +x mvnw && ./mvnw -B dependency:go-offline || mvn -B dependency:go-offline
+RUN chmod +x mvnw
+
+RUN --mount=type=cache,target=/root/.m2,sharing=locked,id=maven-repo \
+	./mvnw -B dependency:go-offline || mvn -B dependency:go-offline
 
 ENV SPRING_PROFILES_ACTIVE=dev
 ENV MAVEN_OPTS="-Dmaven.repo.local=/root/.m2/repository"
