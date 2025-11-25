@@ -1,20 +1,81 @@
+version: "3.9"
 
 services:
-  node-app:
-    image: node:22-alpine
-    container_name: node-dev
-    working_dir: /app
+  mysql:
+    image: mysql:8.0
+    container_name: ai-agent-platform-mysql-dev
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: ai_agent_db
+      MYSQL_USER: dev
+      MYSQL_PASSWORD: devpass
+    ports:
+      - "3306:3306"
+    command: [
+      "--default-authentication-plugin=mysql_native_password",
+      "--character-set-server=utf8mb4",
+      "--collation-server=utf8mb4_0900_ai_ci",
+      "--skip-name-resolve",
+      "--explicit_defaults_for_timestamp"
+    ]
     volumes:
-      - ./frontend:/app
+      - mysql_data_dev:/var/lib/mysql
+      - ./backend/database/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
     networks:
       - app-dev-network
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+    container_name: ai-agent-platform-backend-dev
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_USERNAME: dev
+      SPRING_DATASOURCE_PASSWORD: devpass
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/ai_agent_db?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+      TZ: Asia/Shanghai
+    volumes:
+      - ./backend:/workspace
+      - maven_cache_dev:/root/.m2
+    ports:
+      - "8080:8080"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - app-dev-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: ai-agent-platform-frontend-dev
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080
+      CHOKIDAR_USEPOLLING: "true"
+    volumes:
+      - ./frontend:/workspace
+      - frontend_node_modules:/workspace/node_modules
     ports:
       - "5173:5173"
-    command: sh -c "npm install && npm run dev"
-    environment:
-      - CHOKIDAR_USEPOLLING=true  # 文件监听
+    depends_on:
+      - backend
+    networks:
+      - app-dev-network
 
 
 networks:
   app-dev-network:
     driver: bridge
+
+volumes:
+  mysql_data_dev:
+  maven_cache_dev:
+  frontend_node_modules:

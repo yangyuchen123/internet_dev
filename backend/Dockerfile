@@ -1,15 +1,24 @@
-FROM eclipse-temurin:25-jre-ubi10-minimal
+FROM maven:3.9.9-eclipse-temurin-21 AS builder
+
+WORKDIR /workspace
+
+COPY pom.xml .
+COPY mvnw mvnw.cmd ./
+COPY .mvn ./.mvn
+
+RUN chmod +x mvnw && ./mvnw -B dependency:go-offline
+
+COPY src ./src
+
+RUN ./mvnw -B clean package -DskipTests
+
+FROM eclipse-temurin:21-jre
 
 LABEL maintainer="ai-agent-platform-backend"
 
-# 创建应用目录
-RUN mkdir -p /app
 WORKDIR /app
 
-# 复制 JAR 包
-# 注意：这里假设 target 目录下只有一个主 JAR 包，或者指定具体名称
-COPY target/project-*.jar /app/
-RUN mv /app/project-*.jar /app/app.jar || true && rm -f /app/*.original
+COPY --from=builder /workspace/target/project-*.jar /app/app.jar
 
 # 设置时区
 ENV TZ=Asia/Shanghai

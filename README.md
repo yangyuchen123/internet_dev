@@ -32,22 +32,19 @@
   git clone https://github.com/HuxJiang/ai_agent_platform.git
   git checkout release //可选命令
   ```
-- 根据` .env.example`文件创建 `.env`文件；
+- 根据 ` .env.example`文件创建 `.env`文件；
 
   ```
   cp .env.example .env
   ```
 
-后端docker镜像单独构建指令：
-
-```cmd
-
-cd backend
-mvn clean package -DskipTests
-docker build -t ai-agent-backend:test .
-```
-
 #### 部署
+
+启动docker引擎
+
+```
+sudo systemctl start docker //linux
+```
 
 部署启动指令：
 
