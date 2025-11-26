@@ -29,21 +29,24 @@ def get_conn():
         return None
 
 
-def like_search(question: str, category: Optional[str], topK: int) -> List[Dict]:
+def like_search(question: str, category: Optional[str], topK: int, user: str = None) -> List[Dict]:
     sql = (
         "SELECT id, title, content, category, keywords, source, created_at "
         "FROM knowledge "
         "WHERE is_deleted=0 AND content LIKE %s "
         + (" AND category=%s" if category else "") +
+        (" AND user=%s" if user else "") +
         " ORDER BY created_at DESC LIMIT %s"
     )
     params = [f"%{question}%"]
     if category:
         params.append(category)
+    if user:
+        params.append(user)
     params.append(topK)
     
     # 添加测试信息打印
-    print(f"[DB Search Test] 执行查询 - 问题: '{question}', 分类: '{category}', 限制数量: {topK}")
+    print(f"[DB Search Test] 执行查询 - 问题: '{question}', 分类: '{category}', 用户: '{user}', 限制数量: {topK}")
     print(f"[DB Search Test] SQL: {sql}")
     print(f"[DB Search Test] 参数: {params}")
     

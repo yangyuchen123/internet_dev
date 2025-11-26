@@ -50,7 +50,18 @@ app.add_middleware(
 )
 
 embedder = Embedder(model_name=MODEL_NAME)
-store = VectorStore(embedder=embedder, index_path=INDEX_PATH, meta_path=META_PATH)
+
+# 为每个用户创建独立的VectorStore实例的字典
+user_stores = {}
+
+# 为指定用户获取或创建VectorStore实例
+def get_user_store(user: str) -> VectorStore:
+    if user not in user_stores:
+        # 为每个用户创建独立的索引和元数据路径
+        user_index_path = os.path.join(os.path.dirname(INDEX_PATH), f"index_{user}.faiss")
+        user_meta_path = os.path.join(os.path.dirname(META_PATH), f"meta_{user}.json")
+        user_stores[user] = VectorStore(embedder=embedder, index_path=user_index_path, meta_path=user_meta_path)
+    return user_stores[user]
 
 
 class IngestRaw(BaseModel):
@@ -76,9 +87,10 @@ class HybridSearchReq(BaseModel):
     beta: float = 0.3
 
 
-@app.get("/health")
-def health() -> Dict[str, Any]:
-    return {"code": 0, "message": "OK", "data": {"index_count": store.count(), "model": MODEL_NAME}}
+@app.get("/rag/health")
+def health(user: str) -> Dict[str, Any]:
+    user_store = get_user_store(user)
+    return {"code": 0, "message": "OK", "data": {"index_count": user_store.count(), "model": MODEL_NAME}}
 
 
 def chunk_text(text: str, size: int, overlap: int) -> List[str]:
@@ -97,8 +109,11 @@ def chunk_text(text: str, size: int, overlap: int) -> List[str]:
     return chunks
 
 
-@app.post("/ingest")
-def ingest(payload: Dict[str, Any]):
+@app.post("/rag/ingest")
+def ingest(payload: Dict[str, Any], user: str):
+    # 获取用户的VectorStore实例
+    user_store = get_user_store(user)
+    
     source = payload.get('source', 'raw')
     if source == 'raw':
         try:
@@ -110,10 +125,11 @@ def ingest(payload: Dict[str, Any]):
             'title': req.title,
             'category': req.category,
             'keywords': req.keywords or '',
-            'content': c
+            'content': c,
+            'user': user  # 添加用户信息到元数据
         } for c in chunks]
         try:
-            store.add_texts(chunks, metas)
+            user_store.add_texts(chunks, metas)
         except Exception as e:
             # 捕获底层入库错误（如 faiss/文件写入/模型编码异常），返回明确错误信息
             raise HTTPException(status_code=500, detail=f"向量入库失败: {e}")
@@ -127,7 +143,7 @@ def ingest(payload: Dict[str, Any]):
         texts, metas = [], []
         # 简化：逐个 id 做单条 LIKE 检索的近似（真实应按 id 精确查询）
         for kid in req.ids:
-            kw = like_search(str(kid), None, 1)
+            kw = like_search(str(kid), None, 1, user)
             if not kw:
                 continue
             item = kw[0]
@@ -139,32 +155,40 @@ def ingest(payload: Dict[str, Any]):
                 'category': item.get('category'),
                 'keywords': item.get('keywords'),
                 'source': item.get('source'),
-                'content': text
+                'content': text,
+                'user': user  # 添加用户信息到元数据
             })
         if not texts:
             return {"code": 0, "message": "OK", "data": {"ingested": 0}}
-        store.add_texts(texts, metas)
+        user_store.add_texts(texts, metas)
         return {"code": 0, "message": "OK", "data": {"ingested": len(texts)}}
     else:
         raise HTTPException(status_code=400, detail="不支持的 source")
 
 
-@app.get("/search")
-def search(q: str, topK: int = 5, category: Optional[str] = None):
+@app.get("/rag/search")
+def search(q: str, topK: int = 5, category: Optional[str] = None, user: str = None):
     if not q:
         raise HTTPException(status_code=400, detail="参数 q 不能为空")
-    res = store.search(q, topK=topK, category=category)
+    if not user:
+        raise HTTPException(status_code=400, detail="参数 user 不能为空")
+    user_store = get_user_store(user)
+    res = user_store.search(q, topK=topK, category=category, user=user)
     return {"code": 0, "message": "OK", "data": res}
 
 
-@app.post("/hybrid-search")
-def hybrid_search(req: HybridSearchReq):
+@app.post("/rag/hybrid-search")
+def hybrid_search(req: HybridSearchReq, user: str):
     if not req.q:
         raise HTTPException(status_code=400, detail="参数 q 不能为空")
+    if not user:
+        raise HTTPException(status_code=400, detail="参数 user 不能为空")
+    # 获取用户的VectorStore实例
+    user_store = get_user_store(user)
     # 多取一些候选，避免两路各自去重后导致信息缺失
-    vec_res = store.search(req.q, topK=max(req.topK * 2, req.topK), category=req.category)
+    vec_res = user_store.search(req.q, topK=max(req.topK * 2, req.topK), category=req.category)
     try:
-        kw_res = like_search(req.q, req.category, topK=max(req.topK * 2, req.topK))
+        kw_res = like_search(req.q, req.category, topK=max(req.topK * 2, req.topK), user=user)
     except Exception as e:
         # 当数据库不可用时，关键词检索回退为空集合，保证接口仍可用
         kw_res = []
@@ -172,16 +196,21 @@ def hybrid_search(req: HybridSearchReq):
     return {"code": 0, "message": "OK", "data": merged[:req.topK]}
 
 
-@app.post("/sync-db")
-def sync_db(category: Optional[str] = None, limit: int = 1000):
+@app.post("/rag/sync-db")
+def sync_db(category: Optional[str] = None, limit: int = 1000, user: str = None):
+    if not user:
+        raise HTTPException(status_code=400, detail="参数 user 不能为空")
+    # 获取用户的VectorStore实例
+    user_store = get_user_store(user)
     # 从 DB 批量读取构建索引（简单示例：按 LIKE 拉取全部）
-    kw_res = like_search('', category, topK=limit)  # 空查询返回全部（实现上可能不支持，实际请改为全量 select）
+    kw_res = like_search('', category, topK=limit, user=user)  # 空查询返回全部（实现上可能不支持，实际请改为全量 select）
     texts = [i.get('content', '') for i in kw_res]
     metas = [{
         'id': i.get('id'), 'title': i.get('title'), 'category': i.get('category'),
-        'keywords': i.get('keywords'), 'source': i.get('source'), 'content': i.get('content', '')
+        'keywords': i.get('keywords'), 'source': i.get('source'), 'content': i.get('content', ''),
+        'user': user  # 添加用户信息到元数据
     } for i in kw_res]
     if not texts:
         return {"code": 0, "message": "OK", "data": {"ingested": 0}}
-    store.add_texts(texts, metas)
+    user_store.add_texts(texts, metas)
     return {"code": 0, "message": "OK", "data": {"ingested": len(texts)}}

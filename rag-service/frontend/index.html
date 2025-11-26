@@ -445,6 +445,10 @@
                 <input type="text" id="file-keywords" placeholder="请输入关键词，用逗号分隔">
             </div>
             <div class="form-group">
+                <label for="file-user">用户ID:</label>
+                <input type="text" id="file-user" placeholder="例如: user123" required>
+            </div>
+            <div class="form-group">
                 <label>文本分块设置</label>
                 <div class="chunk-size-control">
                     <div>
@@ -486,6 +490,10 @@
             <div class="form-group">
                 <label for="text-keywords">关键词（可选）</label>
                 <input type="text" id="text-keywords" placeholder="请输入关键词，用逗号分隔">
+            </div>
+            <div class="form-group">
+                <label for="text-user">用户ID:</label>
+                <input type="text" id="text-user" placeholder="例如: user123" required>
             </div>
             <div class="form-group">
                 <label for="text-content">文本内容</label>
@@ -532,6 +540,10 @@
                     <option value="other">其他</option>
                 </select>
             </div>
+            <div class="form-group">
+                <label for="search-user">用户ID:</label>
+                <input type="text" id="search-user" placeholder="例如: user123" required>
+            </div>
             <div class="button-group">
                 <button onclick="searchContent()">搜索</button>
             </div>
@@ -559,6 +571,10 @@
                     <option value="manual">手册</option>
                     <option value="other">其他</option>
                 </select>
+            </div>
+            <div class="form-group">
+                <label for="hybrid-user">用户ID:</label>
+                <input type="text" id="hybrid-user" placeholder="例如: user123" required>
             </div>
             <div class="form-group">
                 <label>权重设置</label>
@@ -622,6 +638,7 @@
             document.getElementById('file-title').value = '';
             document.getElementById('file-category').value = 'general';
             document.getElementById('file-keywords').value = '';
+            document.getElementById('file-user').value = '';
             document.getElementById('file-chunk-size').value = 500;
             document.getElementById('file-chunk-overlap').value = 50;
             setStatus('file-status', 'info', '准备上传文件...');
@@ -632,6 +649,7 @@
             document.getElementById('text-title').value = '';
             document.getElementById('text-category').value = 'general';
             document.getElementById('text-keywords').value = '';
+            document.getElementById('text-user').value = '';
             document.getElementById('text-content').value = '';
             document.getElementById('text-chunk-size').value = 500;
             document.getElementById('text-chunk-overlap').value = 50;
@@ -658,6 +676,7 @@
             const title = document.getElementById('file-title').value;
             const category = document.getElementById('file-category').value;
             const keywords = document.getElementById('file-keywords').value;
+            const user = document.getElementById('file-user').value;
             const chunkSize = parseInt(document.getElementById('file-chunk-size').value);
             const chunkOverlap = parseInt(document.getElementById('file-chunk-overlap').value);
             
@@ -668,6 +687,11 @@
             
             if (!title) {
                 setStatus('file-status', 'error', '请输入文件标题');
+                return;
+            }
+            
+            if (!user) {
+                setStatus('file-status', 'error', '请输入用户ID');
                 return;
             }
             
@@ -707,6 +731,7 @@
                             category: category,
                             text: text,
                             keywords: keywords,
+                            user: user,
                             chunkSize: chunkSize,
                             chunkOverlap: chunkOverlap
                         })
@@ -756,6 +781,7 @@
             const title = document.getElementById('text-title').value;
             const category = document.getElementById('text-category').value;
             const keywords = document.getElementById('text-keywords').value;
+            const user = document.getElementById('text-user').value;
             const content = document.getElementById('text-content').value;
             const chunkSize = parseInt(document.getElementById('text-chunk-size').value);
             const chunkOverlap = parseInt(document.getElementById('text-chunk-overlap').value);
@@ -767,6 +793,11 @@
             
             if (!content) {
                 setStatus('text-status', 'error', '请输入文本内容');
+                return;
+            }
+            
+            if (!user) {
+                setStatus('text-status', 'error', '请输入用户ID');
                 return;
             }
             
@@ -789,6 +820,7 @@
                         category: category,
                         text: content,
                         keywords: keywords,
+                        user: user,
                         chunkSize: chunkSize,
                         chunkOverlap: chunkOverlap
                     })
@@ -915,16 +947,22 @@
             const query = document.getElementById('search-query').value;
             const topK = document.getElementById('search-topk').value;
             const category = document.getElementById('search-category').value;
+            const user = document.getElementById('search-user').value;
             
             if (!query) {
                 setStatus('search-status', 'error', '请输入搜索关键词');
                 return;
             }
             
+            if (!user) {
+                setStatus('search-status', 'error', '请输入用户ID');
+                return;
+            }
+            
             try {
                 setStatus('search-status', 'info', '正在搜索...');
                 
-                let url = `${API_BASE_URL}/search?q=${encodeURIComponent(query)}&topK=${topK}`;
+                let url = `${API_BASE_URL}/search?q=${encodeURIComponent(query)}&topK=${topK}&user=${encodeURIComponent(user)}`;
                 if (category) {
                     url += `&category=${encodeURIComponent(category)}`;
                 }
@@ -948,11 +986,17 @@
             const query = document.getElementById('hybrid-query').value;
             const topK = document.getElementById('hybrid-topk').value;
             const category = document.getElementById('hybrid-category').value;
+            const user = document.getElementById('hybrid-user').value;
             const alpha = document.getElementById('hybrid-alpha').value;
             const beta = document.getElementById('hybrid-beta').value;
             
             if (!query) {
                 setStatus('hybrid-status', 'error', '请输入搜索关键词');
+                return;
+            }
+            
+            if (!user) {
+                setStatus('hybrid-status', 'error', '请输入用户ID');
                 return;
             }
             
@@ -968,6 +1012,7 @@
                         q: query,
                         topK: parseInt(topK),
                         category: category || undefined,
+                        user: user,
                         alpha: parseFloat(alpha),
                         beta: parseFloat(beta)
                     })

@@ -92,7 +92,7 @@ class VectorStore:
         self.save()
         print(f"[VectorStore] 数据已保存到磁盘")
 
-    def search(self, q: str, topK: int = 5, category: Optional[str] = None):
+    def search(self, q: str, topK: int = 5, category: Optional[str] = None, user: Optional[str] = None):
         qv = self.embedder.encode([q])
         qv = np.asarray(qv, dtype='float32')
         D, I = self.index.search(qv, topK)
@@ -101,6 +101,9 @@ class VectorStore:
             if idx < 0 or idx >= len(self.meta):
                 continue
             item = dict(self.meta[idx])
+            # 检查用户权限，如果提供了user参数且不匹配，则跳过
+            if user and item.get('user') and item.get('user') != user:
+                continue
             if category and item.get('category') and item.get('category') != category:
                 continue
             item['score_vec'] = float(score)

@@ -168,6 +168,7 @@ python start_service.py
   "message": "搜索成功",
   "data": [
     {
+
       "content": "...相关文本内容...",
       "score": 0.95,
       "metadata": {
