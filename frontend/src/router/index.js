@@ -3,7 +3,10 @@ import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import HomeView from '../views/HomeView.vue'
 import AgentsView from '../views/AgentsView.vue'
-import AgentUpdateView from '../views/AgentUpdateView.vue'
+import AgentCreationView from '../views/AgentCreationView.vue'
+import PluginsView from '../views/PluginsView.vue'
+import WorkflowView from '../views/WorkflowView.vue'
+import KnowledgeView from '../views/KnowledgeView.vue'
 
 const routes = [
   {
@@ -35,6 +38,30 @@ const routes = [
     }
   },
   {
+    path: '/plugins',
+    name: 'Plugins',
+    component: PluginsView,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/workflow',
+    name: 'Workflow',
+    component: WorkflowView,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
+    path: '/knowledge',
+    name: 'Knowledge',
+    component: KnowledgeView,
+    meta: {
+      requiresAuth: true
+    }
+  },
+  {
     path: '/agents',
     name: 'Agents',
     component: AgentsView,
@@ -43,9 +70,9 @@ const routes = [
     }
   },
   {
-    path: '/agent/update/:id',
-    name: 'AgentUpdate',
-    component: AgentUpdateView,
+    path: '/agents/creation',
+    name: 'AgentCreation',
+    component: AgentCreationView,
     meta: {
       requiresAuth: true // 需要登录才能访问
     }
