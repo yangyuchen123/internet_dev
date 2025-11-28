@@ -17,93 +17,102 @@
     </header>
     
     <div class="main-content">
-      <!-- 左侧会话列表 -->
+      <!-- 左侧菜单栏 -->
       <aside class="sidebar">
-        <div class="sidebar-header">
-          <h3>会话列表</h3>
-        </div>
-        <div class="sidebar-content">
-          <!-- 会话列表 -->
-          <div class="conversations-list">
-            <div 
-              v-for="conversation in conversations" 
-              :key="conversation.id" 
-              class="conversation-item"
-            >
-              <div 
-                class="conversation-name" 
-                @click="selectConversation(conversation)"
-                :class="{ 'active': selectedConversation?.id === conversation.id }"
-              >
-                {{ conversation.title }}
-              </div>
-              <button 
-                class="btn-delete-conversation" 
-                @click="deleteConversation(conversation.id)"
-                title="删除会话"
-              >
-                ×
-              </button>
-            </div>
-            
-            <!-- 空会话提示 -->
-            <div v-if="conversations.length === 0" class="empty-conversations">
-              暂无会话，请创建新会话
-            </div>
-          </div>
-        </div>
+        <nav class="menu">
+          <ul class="menu-list">
+            <li class="menu-item">
+              <router-link to="/home" class="menu-link" active-class="active">
+                <span class="menu-icon">🏠</span>
+                <span class="menu-text">主页</span>
+              </router-link>
+            </li>
+            <li class="menu-item">
+              <router-link to="/plugins" class="menu-link" active-class="active">
+                <span class="menu-icon">🔌</span>
+                <span class="menu-text">插件</span>
+              </router-link>
+            </li>
+            <li class="menu-item">
+              <router-link to="/workflow" class="menu-link" active-class="active">
+                <span class="menu-icon">🔄</span>
+                <span class="menu-text">工作流</span>
+              </router-link>
+            </li>
+            <li class="menu-item">
+              <router-link to="/knowledge" class="menu-link" active-class="active">
+                <span class="menu-icon">📚</span>
+                <span class="menu-text">知识库</span>
+              </router-link>
+            </li>
+          </ul>
+        </nav>
       </aside>
       
-      <!-- 中间内容区：聊天历史 -->
+      <!-- 主页内容 -->
       <main class="content">
-        <!-- 会话标题 -->
-        <div class="content-header">
-          <h2>{{ selectedConversation?.title || '请选择一个会话' }}</h2>
-          <p class="content-subtitle">
-            {{ selectedConversation?.createdAt ? `创建于: ${selectedConversation.createdAt}` : '' }}
-          </p>
+        <div class="welcome-section">
+          <h2>欢迎回来，{{ user?.nickname || user?.username || '用户' }}！</h2>
+          <p class="welcome-message">这是智能体管理系统的首页。</p>
         </div>
         
-        <!-- 聊天历史 -->
-        <div class="chat-history">
-          <!-- 加载状态 -->
-          <div v-if="isLoadingConversation" class="loading">
-            加载会话中...
-          </div>
-          
-          <!-- 聊天消息列表 -->
-          <div v-if="messages.length > 0" class="messages-list">
-            <div v-for="(messagePair, index) in messages" :key="index" class="message-pair">
-              <!-- 用户消息 -->
-              <div class="message user-message">
-                <div class="message-sender">用户</div>
-                <div class="message-content">{{ messagePair.userMessageVO?.content || '无内容' }}</div>
-                <div class="message-time">{{ messagePair.userMessageVO?.createdAt || '' }}</div>
+        <!-- 智能体列表 -->
+        <div class="agents-section">
+          <h3>我的智能体</h3>
+          <div class="agents-grid">
+            <!-- 智能体avatar -->
+            <div 
+              v-for="agent in agents" 
+              :key="agent.id" 
+              class="agent-avatar"
+            >
+              <div class="avatar-container">
+                <img 
+                  :src="agent.avatar || 'https://via.placeholder.com/100'" 
+                  :alt="agent.name" 
+                  class="avatar-img"
+                />
+                <div class="agent-name">{{ agent.name }}</div>
               </div>
-              
-              <!-- 智能体消息 -->
-              <div class="message agent-message">
-                <div class="message-sender">智能体</div>
-                <div class="message-content">{{ messagePair.agentMessageVO?.content || '无内容' }}</div>
-                <div class="message-time">{{ messagePair.agentMessageVO?.createdAt || '' }}</div>
+            </div>
+            
+            <!-- 添加智能体按钮 -->
+            <div class="agent-avatar add-agent" @click="showCreateModal = true">
+              <div class="avatar-container">
+                <div class="add-icon">+</div>
+                <div class="agent-name">添加智能体</div>
               </div>
             </div>
           </div>
-          
-          <!-- 无消息提示 -->
-          <div v-else-if="selectedConversation" class="empty-messages">
-            暂无消息，开始对话吧
-          </div>
-          
-          <!-- 未选择会话提示 -->
-          <div v-else class="select-conversation-prompt">
-            <p>请从左侧选择一个会话开始聊天</p>
+        </div>
+      </main>
+    </div>
+    
+    <!-- 创建智能体弹窗 -->
+    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h3>创建智能体</h3>
+          <button class="modal-close" @click="showCreateModal = false">×</button>
+        </div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label for="agentName">智能体名称</label>
+            <input 
+              type="text" 
+              id="agentName" 
+              v-model="newAgentName" 
+              placeholder="请输入智能体名称"
+              class="form-input"
+              @keyup.enter="handleCreateAgent"
+            />
           </div>
         </div>
-        
-        <!-- 错误信息 -->
-        <div v-if="error" class="error-message">{{ error }}</div>
-      </main>
+        <div class="modal-footer">
+          <button class="btn-cancel" @click="showCreateModal = false">取消</button>
+          <button class="btn-confirm" @click="handleCreateAgent" :disabled="!newAgentName.trim()">确认</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -116,17 +125,9 @@ export default {
   data() {
     return {
       user: null,
-      currentTime: new Date().toLocaleString(),
-      
-      // 会话相关数据
-      conversations: [],
-      selectedConversation: null,
-      messages: [],
-      
-      // 状态管理
-      isLoadingConversations: false,
-      isLoadingConversation: false,
-      error: ''
+      agents: [],
+      showCreateModal: false,
+      newAgentName: ''
     }
   },
   mounted() {
@@ -136,19 +137,8 @@ export default {
     // 检查登录状态
     this.checkLoginStatus()
     
-    // 每秒更新时间
-    this.timeInterval = setInterval(() => {
-      this.currentTime = new Date().toLocaleString()
-    }, 1000)
-    
-    // 加载会话列表
-    this.loadConversations()
-  },
-  beforeUnmount() {
-    // 清理定时器
-    if (this.timeInterval) {
-      clearInterval(this.timeInterval)
-    }
+    // 获取智能体列表
+    this.getAgentsList()
   },
   methods: {
     // 获取用户信息
@@ -177,68 +167,29 @@ export default {
       }
     },
     
-    // 加载会话列表
-    async loadConversations() {
-      this.isLoadingConversations = true
-      this.error = ''
-      
+    // 获取智能体列表
+    async getAgentsList() {
       try {
-        const response = await api.conversation.getConversationList()
-        if (response && response.conversations) {
-          this.conversations = response.conversations
-        }
+        const response = await api.agent.getAgentList()
+        this.agents = response.data || []
       } catch (error) {
-        console.error('加载会话列表失败:', error)
-        this.error = '加载会话列表失败，请稍后重试'
-      } finally {
-        this.isLoadingConversations = false
+        console.error('获取智能体列表失败:', error)
+        this.agents = []
       }
     },
     
-    // 选择会话
-    async selectConversation(conversation) {
-      this.isLoadingConversation = true
-      this.error = ''
-      
-      try {
-        // 设置选中会话
-        this.selectedConversation = conversation
+    // 处理创建智能体
+    handleCreateAgent() {
+      if (this.newAgentName.trim()) {
+        // 跳转到创建智能体页面
+        this.$router.push({
+          path: '/agents/creation',
+          query: { name: this.newAgentName.trim() }
+        })
         
-        // 获取会话详情
-        const conversationDetails = await api.conversation.getConversation(conversation.id)
-        this.selectedConversation = conversationDetails
-        
-        // 获取消息历史
-        const messagesResponse = await api.conversation.getMessageHistory(conversation.id)
-        if (messagesResponse && messagesResponse.history) {
-          this.messages = messagesResponse.history
-        } else {
-          this.messages = []
-        }
-      } catch (error) {
-        console.error('获取会话详情失败:', error)
-        this.error = '获取会话详情失败，请稍后重试'
-      } finally {
-        this.isLoadingConversation = false
-      }
-    },
-    
-    // 删除会话
-    async deleteConversation(conversationId) {
-      try {
-        await api.conversation.deleteConversation(conversationId)
-        
-        // 更新会话列表
-        this.conversations = this.conversations.filter(conv => conv.id !== conversationId)
-        
-        // 如果删除的是当前选中的会话，清空选中状态和消息
-        if (this.selectedConversation?.id === conversationId) {
-          this.selectedConversation = null
-          this.messages = []
-        }
-      } catch (error) {
-        console.error('删除会话失败:', error)
-        this.error = '删除会话失败，请稍后重试'
+        // 重置表单
+        this.newAgentName = ''
+        this.showCreateModal = false
       }
     }
   }
@@ -310,102 +261,60 @@ export default {
   overflow: hidden;
 }
 
-/* 侧边栏样式 */
+/* 左侧菜单栏样式 */
 .sidebar {
-  width: 240px;
+  width: 200px;
   background-color: #f7fafc;
   border-right: 1px solid #e2e8f0;
   display: flex;
   flex-direction: column;
 }
 
-.sidebar-header {
-  padding: 20px 16px;
-  border-bottom: 1px solid #e2e8f0;
+/* 菜单样式 */
+.menu {
+  padding: 16px 0;
+  flex: 1;
 }
 
-.sidebar-header h3 {
+.menu-list {
+  list-style: none;
+  padding: 0;
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
+}
+
+.menu-item {
+  margin-bottom: 4px;
+}
+
+.menu-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  text-decoration: none;
+  color: #4a5568;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  border-radius: 0 6px 6px 0;
+}
+
+.menu-link:hover {
+  background-color: #edf2f7;
   color: #2d3748;
 }
 
-.sidebar-content {
-  padding: 16px;
-  flex: 1;
-  overflow-y: auto;
-}
-
-/* 会话列表样式 */
-.conversations-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.conversation-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 6px;
-  background-color: white;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s;
-  cursor: pointer;
-}
-
-.conversation-item:hover {
-  background-color: #edf2f7;
-}
-
-.conversation-name {
-  flex: 1;
-  font-size: 14px;
-  font-weight: 500;
-  color: #4a5568;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.conversation-name.active {
+.menu-link.active {
   background-color: #667eea;
   color: white;
-  padding: 4px 8px;
-  border-radius: 4px;
 }
 
-.btn-delete-conversation {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #e53e3e;
-  color: white;
-  border: none;
-  border-radius: 50%;
-  font-size: 16px;
-  font-weight: bold;
-  cursor: pointer;
-  line-height: 1;
-  transition: background-color 0.2s;
+.menu-icon {
+  font-size: 18px;
 }
 
-.btn-delete-conversation:hover {
-  background-color: #c53030;
-}
-
-.empty-conversations {
-  text-align: center;
-  color: #a0aec0;
-  font-size: 14px;
-  padding: 20px;
-  background-color: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+.menu-text {
+  flex: 1;
 }
 
 /* 内容区样式 */
@@ -418,145 +327,254 @@ export default {
   flex-direction: column;
 }
 
-.content-header {
-  margin-bottom: 32px;
+/* 欢迎区域样式 */
+.welcome-section {
+  background-color: white;
+  border-radius: 12px;
+  padding: 32px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  margin-bottom: 24px;
 }
 
-.content-header h2 {
-  margin: 0 0 8px 0;
+.welcome-section h2 {
+  margin: 0 0 16px 0;
   font-size: 28px;
   font-weight: 600;
   color: #2d3748;
 }
 
-.content-subtitle {
+.welcome-message {
   margin: 0;
   font-size: 16px;
   color: #718096;
 }
 
-/* 聊天历史样式 */
-.chat-history {
-  flex: 1;
+/* 智能体区域样式 */
+.agents-section {
   background-color: white;
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
 }
 
-.loading {
+.agents-section h3 {
+  margin: 0 0 24px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+/* 智能体网格样式 */
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 24px;
+  justify-items: center;
+}
+
+/* 智能体头像样式 */
+.agent-avatar {
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  width: 100%;
+  max-width: 120px;
+  text-align: center;
+}
+
+.agent-avatar:hover {
+  transform: translateY(-4px);
+}
+
+.avatar-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.avatar-img {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid #e2e8f0;
+  margin-bottom: 8px;
+}
+
+.add-agent .avatar-container {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  border: 2px dashed #cbd5e0;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 40px;
-  color: #718096;
-  font-size: 16px;
+  margin-bottom: 8px;
+  transition: all 0.2s ease;
 }
 
-.messages-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+.add-agent:hover .avatar-container {
+  border-color: #667eea;
+  background-color: #f7fafc;
 }
 
-.message-pair {
+.add-icon {
+  font-size: 32px;
+  color: #a0aec0;
+  font-weight: 300;
+}
+
+.agent-name {
+  font-size: 14px;
+  color: #4a5568;
+  font-weight: 500;
+  margin-top: 8px;
+  word-break: break-word;
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.modal-content {
+  background-color: white;
+  border-radius: 12px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #2d3748;
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  font-size: 24px;
+  color: #a0aec0;
+  cursor: pointer;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+  background-color: #f7fafc;
+  color: #4a5568;
+}
+
+.modal-body {
+  padding: 24px;
+}
+
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4a5568;
+}
+
+.form-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #2d3748;
+  transition: all 0.2s ease;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
   gap: 12px;
+  padding: 20px 24px;
+  border-top: 1px solid #e2e8f0;
 }
 
-.message {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 12px 16px;
-  border-radius: 8px;
-  max-width: 80%;
+.btn-cancel, .btn-confirm {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
 }
 
-.user-message {
-  align-self: flex-end;
+.btn-cancel {
+  background-color: #f7fafc;
+  color: #4a5568;
+  border: 1px solid #e2e8f0;
+}
+
+.btn-cancel:hover {
+  background-color: #edf2f7;
+}
+
+.btn-confirm {
   background-color: #667eea;
   color: white;
 }
 
-.agent-message {
-  align-self: flex-start;
-  background-color: #edf2f7;
-  color: #2d3748;
+.btn-confirm:hover {
+  background-color: #5a67d8;
 }
 
-.message-sender {
-  font-size: 12px;
-  font-weight: 600;
-  opacity: 0.8;
-}
-
-.message-content {
-  font-size: 14px;
-  line-height: 1.5;
-}
-
-.message-time {
-  font-size: 10px;
+.btn-confirm:disabled {
+  background-color: #a0aec0;
+  cursor: not-allowed;
   opacity: 0.6;
-  align-self: flex-end;
-}
-
-.select-conversation-prompt {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: #a0aec0;
-  font-size: 16px;
-}
-
-.empty-messages {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  color: #a0aec0;
-  font-size: 16px;
-}
-
-/* 错误信息样式 */
-.error-message {
-  margin-top: 16px;
-  padding: 12px;
-  background-color: #fed7d7;
-  color: #e53e3e;
-  border-radius: 6px;
-  font-size: 14px;
-}
-
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .main-content {
-    flex-direction: column;
-  }
-  
-  .sidebar {
-    width: 100%;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid #e2e8f0;
-  }
-  
-  .navbar {
-    padding: 0 16px;
-  }
-  
-  .content {
-    padding: 16px;
-  }
-  
-  .message {
-    max-width: 90%;
-  }
 }
 </style>

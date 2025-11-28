@@ -1,13 +1,11 @@
 // 从各个模块导入API
 import { authAPI, getAccessToken, setAccessToken, removeAccessToken, saveUserInfo, getUserInfo, removeUserInfo } from './user.js'
 import { agentAPI } from './agent.js'
-import { conversationAPI } from './conversation.js'
 
 // 创建默认导出对象，保持向后兼容
 const api = {
   auth: authAPI,
   agent: agentAPI,
-  conversation: conversationAPI,
   getAccessToken,
   setAccessToken,
   removeAccessToken,
@@ -31,8 +29,5 @@ export {
   removeUserInfo,
   
   // 智能体相关
-  agentAPI,
-  
-  // 会话相关
-  conversationAPI
+  agentAPI
 }

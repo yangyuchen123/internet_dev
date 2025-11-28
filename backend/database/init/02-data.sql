@@ -1,0 +1,28 @@
+-- 身体健康Agent平台示例数据
+USE ai_agent_db;
+
+-- 插入测试用户
+INSERT INTO `user` (`id`, `username`, `password`, `nickname`, `email`, `phone`, `avatar`, `gender`, `birthday`, `status`, `last_login_time`, `created_at`, `updated_at`, `is_deleted`) VALUES
+(2, 'testuser01', '$2a$10$jvHoI7ix1loyMFYYCIVzjee6oL5Vb.GmI8keHVjYYe95yaluAh28y', 'testuser01', '3877612901@qq.com', NULL, 'https://example.com/avatar.jpg', NULL, NULL, 1, '2025-11-20 18:39:46', '2025-11-20 13:53:11', '2025-11-20 18:39:45', 0),
+(3, 'testuser02', '$2a$10$OWVx3PwZM0vu0lkJjEHPZuLqBJAY7jaDRqSaWNhtLiRI//LKP3vyu', 'testuser02', '3877612901@qq.com', NULL, 'https://example.com/avatar.jpg', NULL, NULL, 1, '2025-11-23 15:38:50', '2025-11-20 13:56:00', '2025-11-23 15:38:50', 0);
+
+-- 插入测试Agent
+INSERT INTO `agent` (`id`, `name`, `description`, `avatar`, `category`, `model`, `system_prompt`, `temperature`, `max_tokens`, `is_public`, `creator_id`, `created_at`, `updated_at`) VALUES
+(1, 'test_agent1', 'This is test_agent1\'s description', 'https://example.com/avatar.jpg', 'test_agent1_category', 'test_agent1_model', 'This is test_agent1\'s system prompt', 0.80, 2048, 1, 2, '2025-11-20 15:45:52', '2025-11-20 18:30:59'),
+(2, 'test_agent2', 'This is test_agent2\'s description', 'https://example.com/avatar.jpg', 'test_agent2_category', 'test_agent2_model', 'This is test_agent2\'s system prompt', 0.75, 4096, 1, 2, '2025-11-20 15:48:03', '2025-11-20 15:48:03');
+
+-- 插入测试会话
+INSERT INTO `conversation` (`id`, `agent_id`, `title`, `metadata`, `created_at`, `updated_at`) VALUES
+(1, 1, 'This is test title for agent with id 1.', '{\"source\": \"web\", \"user_agent\": \"Mozilla/5.0...\"}', '2025-11-21 14:14:49', '2025-11-21 14:14:49'),
+(2, 2, 'This is test title for agent with id 2.', '{\"source\": \"web\", \"user_agent\": \"Mozilla/5.0...\"}', '2025-11-21 16:03:33', '2025-11-21 16:03:33');
+
+-- 插入测试消息
+INSERT INTO `message` (`id`, `conversation_id`, `role`, `content`, `type`, `metadata`, `created_at`, `updated_at`) VALUES
+(1, 1, 'user', '你好！', 'text', '{\"attachments\": [\"file_id_1\", \"file_id_2\"]}', '2025-11-21 17:46:43', '2025-11-21 17:46:43'),
+(2, 1, 'assistant', '您好！我是智能助手，很高兴为您服务。', 'text', NULL, '2025-11-21 17:46:43', '2025-11-21 17:46:43'),
+(3, 1, 'user', '今天是星期几？', 'text', '{\"attachments\": [\"file_id_1\", \"file_id_2\"]}', '2025-11-21 17:52:48', '2025-11-21 17:52:48'),
+(4, 1, 'assistant', '今天是星期三。', 'text', NULL, '2025-11-21 17:52:48', '2025-11-21 17:52:48'),
+(5, 1, 'user', '今天天气怎么样？', 'text', '{\"attachments\": [\"file_id_1\", \"file_id_2\"]}', '2025-11-21 17:55:43', '2025-11-21 17:55:43'),
+(6, 1, 'assistant', '今天天气晴。', 'text', NULL, '2025-11-21 17:55:43', '2025-11-21 17:55:43'),
+(7, 1, 'user', '距离放假还有多久？', 'text', '{\"attachments\": [\"file_id_1\", \"file_id_2\"]}', '2025-11-21 18:00:50', '2025-11-21 18:00:50'),
+(8, 1, 'assistant', '距离放假还有很久。', 'text', NULL, '2025-11-21 18:00:50', '2025-11-21 18:00:50');
