@@ -234,8 +234,8 @@ def sync_db(req: SyncDBReq):
     kw_res = like_search('', req.category, topK=req.limit, user=req.user)  # 空查询返回全部（实现上可能不支持，实际请改为全量 select）
     texts = [i.get('content', '') for i in kw_res]
     metas = [{
-        'id': i.get('id'), 'title': i.get('title'), 'category': i.get('category'),
-        'keywords': i.get('keywords'), 'source': i.get('source'), 'content': i.get('content', ''),
+        'title': i.get('title'), 'category': i.get('category'),
+        'keywords': i.get('keywords'), 'content': i.get('content', ''),
         'user': req.user  # 添加用户信息到元数据
     } for i in kw_res]
     if not texts:
