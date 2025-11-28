@@ -5,3 +5,5 @@ sentence-transformers
 pydantic
 pymysql
 numpy
+huggingface_hub
+tqdm
