@@ -2,6 +2,7 @@
 # 这个仓库使用 .ignore 单独列出要忽略的项（也可将内容复制到 .gitignore）
 
 .env
+dist/
 node_modules/
 target/
 .idea/
@@ -9,5 +10,5 @@ target/
 *.log
 # 环境变量文件（实际值）
 .env
-rag-service/model/
-rag-service/data/kb
+rag-service/data
+rag-service/model

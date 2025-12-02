@@ -39,7 +39,8 @@ public class WebConfig implements WebMvcConfigurer {
                         "/webjars/**",
                         "/api/user/register",
                         "/api/user/login",
-                        "/api/user/refresh"
+                        "/api/user/refresh",
+                        "/api/test/ping"
                 );
     }
 }

@@ -42,10 +42,12 @@ public class SecurityConfig {
                                 "/api/user/register",
                                 "/api/user/login",
                                 "/api/user/refresh",
+                                "/api/test/ping",
                                 "/doc.html",
                                 "/webjars/**",
                                 "/swagger-resources/**",
-                                "/v3/api-docs/**"
+                                "/v3/api-docs/**",
+                                "/v1/ws/**"  // 允许WebSocket连接
                         ).permitAll()
                         // 其他请求需要认证
                         // .anyRequest().permitAll() // 开发阶段暂时允许所有请求

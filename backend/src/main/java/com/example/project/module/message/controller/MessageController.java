@@ -44,6 +44,4 @@ public class MessageController {
         return ApiResponse.ok("获取消息历史成功", vo);
     }
 
-
-
 }

@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM pytorch/pytorch:2.9.1-cuda12.6-cudnn9-runtime
 
 # 设置工作目录
 WORKDIR /app
@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # 复制requirements.txt并安装Python依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir --upgrade pip setuptools && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip setuptools -i https://pypi.tuna.tsinghua.edu.cn/simple/ && \
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/
 
 # 复制RAG服务代码
 COPY . .

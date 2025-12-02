@@ -4,6 +4,14 @@
 
 RAG (Retrieval-Augmented Generation) 服务是一个基于检索增强生成的智能问答系统，能够从上传的文档中检索相关信息并提供精准的回答。本服务提供了文档导入、向量搜索、混合搜索等核心功能，并附带一个完整的前端测试界面。
 
+## 最新更新
+
+- **模型下载脚本**：新增 `download_model.py` 脚本，支持自动下载 HuggingFace 模型到本地
+- **Docker 优化**：移除了 Dockerfile 中的 `--no-cache-dir` 参数，大幅提高构建效率
+- **代码优化**：简化了 `start_service.py` 中的模型验证逻辑，移除了 `app.py` 中不必要的 `id` 字段
+- **数据隔离**：强化了多用户数据隔离机制，确保用户数据安全
+- **接口变更**：元数据结构中移除 source 字段，优化存储结构
+
 ## 功能特性
 
 - **文档导入**：支持多种格式文档的上传和索引
@@ -32,7 +40,8 @@ RAG (Retrieval-Augmented Generation) 服务是一个基于检索增强生成的�
 
 - Python 3.8 或更高版本
 - pip 包管理工具
-- 足够的内存空间用于向量存储
+- 足够的内存空间用于向量存储和模型文件
+- 互联网连接（用于下载模型）
 
 ## 安装说明
 
@@ -57,6 +66,46 @@ pip install -r requirements.txt
 cp .env.example .env
 # 编辑 .env 文件，设置相应的环境变量
 ```
+
+## 模型下载说明
+
+本服务提供了 `download_model.py` 脚本，用于自动下载和管理嵌入模型。
+
+### 查看可用模型
+
+```bash
+python download_model.py --list
+```
+
+这将显示所有预配置的模型别名及其对应的 HuggingFace 模型 ID。
+
+### 下载预配置模型
+
+```bash
+python download_model.py zh-small
+```
+
+常用的预配置模型别名：
+- `zh-small`: BAAI/bge-small-zh-v1.5 (轻量级中文模型)
+- `zh-base`: BAAI/bge-base-zh-v1.5 (基础中文模型)
+- `zh-large`: BAAI/bge-large-zh-v1.5 (大型中文模型)
+- `en-small`: BAAI/bge-small-en-v1.5 (轻量级英文模型)
+- `en-base`: BAAI/bge-base-en-v1.5 (基础英文模型)
+- `en-large`: BAAI/bge-large-en-v1.5 (大型英文模型)
+
+### 下载自定义模型
+
+```bash
+python download_model.py --output ./model_name HuggingFaceModelID
+```
+
+### 脚本参数说明
+
+- `model_id`: 模型 ID 或预配置的模型别名
+- `--output`: 指定下载目录（默认：./model）
+- `--force`: 强制重新下载，覆盖现有模型
+- `--list`: 列出所有预配置的模型别名
+- `--proxy`: 设置代理服务器（可选）
 
 ## 配置说明
 
@@ -95,11 +144,16 @@ python start_service.py
 
 ### 1. 健康检查接口
 
-#### GET /health
+#### POST /rag/health
 
-**功能**：检查服务状态并获取基本信息
+**功能**：检查服务状态并获取用户特定的索引信息
 
-**请求参数**：无
+**请求体**：
+```json
+{
+  "user": "用户名"
+}
+```
 
 **响应示例**：
 ```json
@@ -116,16 +170,14 @@ python start_service.py
 
 ### 2. 文档导入接口
 
-#### POST /ingest
+#### POST /rag/ingest
 
-**功能**：上传并索引文档
+**功能**：上传并索引文档，为指定用户创建隔离的向量存储
 
-**请求参数**：
-- `file`：文件对象（multipart/form-data格式）
-- `chunk_size`：可选，文本分块大小
-- `category`：可选，文档类别标签
+**请求体**：
 ```json
 {
+  "user": "用户名",  // 必需，用户标识
   "source": "raw",  // 或 "db"
   "title": "文件标题",
   "category": "分类",  // 如 general, document, article 等
@@ -133,7 +185,6 @@ python start_service.py
   "keywords": "关键词，用逗号分隔",
   "chunkSize": 500,  // 分块大小
   "chunkOverlap": 50  // 重叠大小
-}
 }
 ```
 
@@ -152,15 +203,18 @@ python start_service.py
 
 ### 3. 向量搜索接口
 
-#### GET /search
+#### POST /rag/search
 
-**功能**：基于语义相似度搜索相关内容
+**功能**：基于语义相似度搜索指定用户的相关内容
 
-**通过URL查询参数传递**：
-- `q`：搜索查询（必需）
-- `topK`：返回结果数量（默认10）
-- `category`：可选，按类别过滤
-- URL示例 ： http://localhost:8000/search?q=查询关键词&topK=5&category=general
+**请求体**：
+```json
+{
+  "user": "用户名",  // 必需，用户标识
+  "q": "搜索查询",  // 必需
+  "topK": 10,  // 返回结果数量，默认10
+  "category": "可选类别"  // 可选，按类别过滤
+}
 **响应示例**：
 ```json
 {
@@ -171,7 +225,6 @@ python start_service.py
       "content": "...相关文本内容...",
       "score": 0.95,
       "metadata": {
-        "source": "example.pdf",
         "page": 1,
         "category": "技术文档"
       }
@@ -183,13 +236,14 @@ python start_service.py
 
 ### 4. 混合搜索接口
 
-#### POST /hybrid-search
+#### POST /rag/hybrid-search
 
-**功能**：结合关键词搜索和向量搜索
+**功能**：结合关键词搜索和向量搜索，为指定用户提供混合检索结果
 
 **请求体**：
 ```json
 {
+  "user": "用户名",  // 必需，用户标识
   "q": "搜索查询",
   "topK": 10,
   "category": "可选类别",
@@ -210,12 +264,61 @@ python start_service.py
       "vector_score": 0.95,
       "keyword_score": 0.85,
       "metadata": {
-        "source": "example.pdf",
         "page": 1
       }
     },
     ...
   ]
+}
+```
+
+### 4. 删除标题接口
+
+#### POST /rag/delete-by-title
+
+**功能**：删除指定用户的索引，清空其向量存储
+
+**请求体**：
+```json
+{
+  "user": "string",
+  "title": "string"
+}
+```
+
+**响应示例**：
+```json
+{
+  "code": 0,
+  "message": "OK",
+  "data": {
+    "deleted": 7
+  }
+}
+```
+
+### 4. 删除种类接口
+
+#### POST /rag/delete-by-category
+
+**功能**：删除指定用户的索引，清空其向量存储
+
+**请求体**：
+```json
+{
+  "user": "string",
+  "category": "string"
+}
+```
+
+**响应示例**：
+```json
+{
+  "code": 0,
+  "message": "OK",
+  "data": {
+    "deleted": 7
+  }
 }
 ```
 
@@ -241,10 +344,24 @@ python start_service.py
 
 ```bash
 # 测试健康检查接口
-curl http://localhost:8001/health
+curl -X POST http://localhost:8000/rag/health \
+  -H "Content-Type: application/json" \
+  -d '{"user": "test_user"}'
 
 # 测试搜索接口
-curl "http://localhost:8001/search?q=你的查询&topK=5"
+curl -X POST http://localhost:8000/rag/search \
+  -H "Content-Type: application/json" \
+  -d '{"user": "test_user", "q": "你的查询", "topK": 5}'
+
+# 测试文档导入接口
+curl -X POST http://localhost:8000/rag/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"user": "test_user", "source": "raw", "title": "测试文档", "text": "测试内容", "category": "general"}'
+
+# 测试混合搜索接口
+curl -X POST http://localhost:8000/rag/hybrid-search \
+  -H "Content-Type: application/json" \
+  -d '{"user": "test_user", "q": "你的查询", "topK": 10, "alpha": 0.7, "beta": 0.3}'
 ```
 
 ## 前端界面使用说明
@@ -274,21 +391,35 @@ docker-compose up -d
 ```
 
 Docker配置文件：
-- `Dockerfile`：定义服务镜像
+- `Dockerfile`：定义服务镜像（已优化依赖缓存机制）
 - `docker-compose.yml`：编排服务
 - `.env.docker`：Docker环境变量配置
+
+### Docker优化说明
+
+我们对Docker构建过程进行了优化，移除了`--no-cache-dir`参数，这将：
+
+- 允许pip缓存下载的Python包
+- 允许Docker缓存依赖安装层
+- 大幅提高后续构建速度，特别是在requirements.txt未变更的情况下
+
+**注意**：第一次构建仍需下载所有依赖，但后续构建将显著加快。
 
 ## 技术细节
 
 ### 核心模块
 
-1. **app.py**：FastAPI应用主入口，定义API路由和CORS配置
+1. **app.py**：FastAPI应用主入口，定义API路由、CORS配置和多用户隔离逻辑
+   - 已优化元数据结构，移除不必要的`id`字段，提高数据处理效率
 2. **config.py**：配置管理模块
-3. **services/**：服务层模块
+3. **download_model.py**：模型下载工具，支持HuggingFace模型的自动下载和验证
+4. **services/**：服务层模块
    - **db.py**：数据库交互
    - **embedder.py**：文本嵌入模型封装
-   - **vector_store.py**：向量存储管理
+   - **vector_store.py**：向量存储管理，支持多用户数据隔离
    - **hybrid_search.py**：混合搜索算法实现
+5. **start_service.py**：服务启动脚本
+   - 已简化模型验证逻辑，提高启动效率
 
 ### 文档处理流程
 
@@ -325,10 +456,12 @@ Docker配置文件：
 
 ## 注意事项
 
-1. 服务默认监听 0.0.0.0:8001，请确保防火墙设置允许访问
-2. 生产环境部署时应移除 `--reload` 参数
-3. 建议定期备份索引数据
-4. 大文件处理可能需要较长时间，请耐心等待
+1. 服务默认监听 0.0.0.0:8000，请确保防火墙设置允许访问
+2. 所有API接口现在都需要在请求体中提供user参数，以实现多用户数据隔离
+3. 生产环境部署时应移除 `--reload` 参数
+4. 建议定期备份索引数据
+5. 大文件处理可能需要较长时间，请耐心等待
+6. 不同用户的数据物理隔离存储，确保数据安全性
 
 ## 许可证
 

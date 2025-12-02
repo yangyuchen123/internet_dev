@@ -50,7 +50,18 @@ app.add_middleware(
 )
 
 embedder = Embedder(model_name=MODEL_NAME)
-store = VectorStore(embedder=embedder, index_path=INDEX_PATH, meta_path=META_PATH)
+
+# 为每个用户创建独立的VectorStore实例的字典
+user_stores = {}
+
+# 为指定用户获取或创建VectorStore实例
+def get_user_store(user: str) -> VectorStore:
+    if user not in user_stores:
+        # 为每个用户创建独立的索引和元数据路径
+        user_index_path = os.path.join(os.path.dirname(INDEX_PATH), f"index_{user}.faiss")
+        user_meta_path = os.path.join(os.path.dirname(META_PATH), f"meta_{user}.json")
+        user_stores[user] = VectorStore(embedder=embedder, index_path=user_index_path, meta_path=user_meta_path)
+    return user_stores[user]
 
 
 class IngestRaw(BaseModel):
@@ -61,11 +72,13 @@ class IngestRaw(BaseModel):
     keywords: Optional[str] = None
     chunkSize: int = 500
     chunkOverlap: int = 50
+    user: str = Field(..., description="用户标识")
 
 
 class IngestDB(BaseModel):
     source: str = Field('db', description="来源：raw 或 db")
     ids: List[int]
+    user: str = Field(..., description="用户标识")
 
 
 class HybridSearchReq(BaseModel):
@@ -74,11 +87,40 @@ class HybridSearchReq(BaseModel):
     category: Optional[str] = None
     alpha: float = 0.7
     beta: float = 0.3
+    user: str = Field(..., description="用户标识")
 
 
-@app.get("/health")
-def health() -> Dict[str, Any]:
-    return {"code": 0, "message": "OK", "data": {"index_count": store.count(), "model": MODEL_NAME}}
+class SearchReq(BaseModel):
+    q: str
+    topK: int = 5
+    category: Optional[str] = None
+    user: str = Field(..., description="用户标识")
+
+
+class SyncDBReq(BaseModel):
+    category: Optional[str] = None
+    limit: int = 1000
+    user: str = Field(..., description="用户标识")
+
+
+class HealthReq(BaseModel):
+    user: str = Field(..., description="用户标识")
+
+
+class DeleteByTitleReq(BaseModel):
+    user: str = Field(..., description="用户标识")
+    title: str = Field(..., description="要删除的标题")
+
+
+class DeleteByCategoryReq(BaseModel):
+    user: str = Field(..., description="用户标识")
+    category: str = Field(..., description="要删除的类别")
+
+
+@app.post("/rag/health")
+def health(req: HealthReq) -> Dict[str, Any]:
+    user_store = get_user_store(req.user)
+    return {"code": 0, "message": "OK", "data": {"index_count": user_store.count(), "model": MODEL_NAME}}
 
 
 def chunk_text(text: str, size: int, overlap: int) -> List[str]:
@@ -97,8 +139,15 @@ def chunk_text(text: str, size: int, overlap: int) -> List[str]:
     return chunks
 
 
-@app.post("/ingest")
+@app.post("/rag/ingest")
 def ingest(payload: Dict[str, Any]):
+    # 从payload中获取user
+    user = payload.get('user')
+    if not user:
+        raise HTTPException(status_code=400, detail="参数 user 不能为空")
+    # 获取用户的VectorStore实例
+    user_store = get_user_store(user)
+    
     source = payload.get('source', 'raw')
     if source == 'raw':
         try:
@@ -110,10 +159,11 @@ def ingest(payload: Dict[str, Any]):
             'title': req.title,
             'category': req.category,
             'keywords': req.keywords or '',
-            'content': c
+            'content': c,
+            'user': user  # 添加用户信息到元数据
         } for c in chunks]
         try:
-            store.add_texts(chunks, metas)
+            user_store.add_texts(chunks, metas)
         except Exception as e:
             # 捕获底层入库错误（如 faiss/文件写入/模型编码异常），返回明确错误信息
             raise HTTPException(status_code=500, detail=f"向量入库失败: {e}")
@@ -127,7 +177,7 @@ def ingest(payload: Dict[str, Any]):
         texts, metas = [], []
         # 简化：逐个 id 做单条 LIKE 检索的近似（真实应按 id 精确查询）
         for kid in req.ids:
-            kw = like_search(str(kid), None, 1)
+            kw = like_search(str(kid), None, 1, user)
             if not kw:
                 continue
             item = kw[0]
@@ -139,32 +189,36 @@ def ingest(payload: Dict[str, Any]):
                 'category': item.get('category'),
                 'keywords': item.get('keywords'),
                 'source': item.get('source'),
-                'content': text
+                'content': text,
+                'user': user  # 添加用户信息到元数据
             })
         if not texts:
             return {"code": 0, "message": "OK", "data": {"ingested": 0}}
-        store.add_texts(texts, metas)
+        user_store.add_texts(texts, metas)
         return {"code": 0, "message": "OK", "data": {"ingested": len(texts)}}
     else:
         raise HTTPException(status_code=400, detail="不支持的 source")
 
 
-@app.get("/search")
-def search(q: str, topK: int = 5, category: Optional[str] = None):
-    if not q:
+@app.post("/rag/search")
+def search(req: SearchReq):
+    if not req.q:
         raise HTTPException(status_code=400, detail="参数 q 不能为空")
-    res = store.search(q, topK=topK, category=category)
+    user_store = get_user_store(req.user)
+    res = user_store.search(req.q, topK=req.topK, category=req.category)
     return {"code": 0, "message": "OK", "data": res}
 
 
-@app.post("/hybrid-search")
+@app.post("/rag/hybrid-search")
 def hybrid_search(req: HybridSearchReq):
     if not req.q:
         raise HTTPException(status_code=400, detail="参数 q 不能为空")
+    # 获取用户的VectorStore实例
+    user_store = get_user_store(req.user)
     # 多取一些候选，避免两路各自去重后导致信息缺失
-    vec_res = store.search(req.q, topK=max(req.topK * 2, req.topK), category=req.category)
+    vec_res = user_store.search(req.q, topK=max(req.topK * 2, req.topK), category=req.category)
     try:
-        kw_res = like_search(req.q, req.category, topK=max(req.topK * 2, req.topK))
+        kw_res = like_search(req.q, req.category, topK=max(req.topK * 2, req.topK), user=req.user)
     except Exception as e:
         # 当数据库不可用时，关键词检索回退为空集合，保证接口仍可用
         kw_res = []
@@ -172,16 +226,53 @@ def hybrid_search(req: HybridSearchReq):
     return {"code": 0, "message": "OK", "data": merged[:req.topK]}
 
 
-@app.post("/sync-db")
-def sync_db(category: Optional[str] = None, limit: int = 1000):
+@app.post("/rag/sync-db")
+def sync_db(req: SyncDBReq):
+    # 获取用户的VectorStore实例
+    user_store = get_user_store(req.user)
     # 从 DB 批量读取构建索引（简单示例：按 LIKE 拉取全部）
-    kw_res = like_search('', category, topK=limit)  # 空查询返回全部（实现上可能不支持，实际请改为全量 select）
+    kw_res = like_search('', req.category, topK=req.limit, user=req.user)  # 空查询返回全部（实现上可能不支持，实际请改为全量 select）
     texts = [i.get('content', '') for i in kw_res]
     metas = [{
-        'id': i.get('id'), 'title': i.get('title'), 'category': i.get('category'),
-        'keywords': i.get('keywords'), 'source': i.get('source'), 'content': i.get('content', '')
+        'title': i.get('title'), 'category': i.get('category'),
+        'keywords': i.get('keywords'), 'content': i.get('content', ''),
+        'user': req.user  # 添加用户信息到元数据
     } for i in kw_res]
     if not texts:
         return {"code": 0, "message": "OK", "data": {"ingested": 0}}
-    store.add_texts(texts, metas)
+    user_store.add_texts(texts, metas)
     return {"code": 0, "message": "OK", "data": {"ingested": len(texts)}}
+
+
+@app.post("/rag/delete-by-title")
+def delete_by_title(req: DeleteByTitleReq):
+    """
+    根据标题删除用户向量库中的内容
+    """
+    print(f"[API] 收到删除请求，用户: {req.user}，标题: {req.title}")
+    try:
+        user_store = get_user_store(req.user)
+        print(f"[API] 获取用户存储成功")
+        deleted_count = user_store.delete_by_title(req.title)
+        print(f"[API] 删除操作完成，删除数量: {deleted_count}")
+        return {"code": 0, "message": "OK", "data": {"deleted": deleted_count}}
+    except Exception as e:
+        print(f"[API] 删除失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除失败: {e}")
+
+
+@app.post("/rag/delete-by-category")
+def delete_by_category(req: DeleteByCategoryReq):
+    """
+    根据类别删除用户向量库中的内容
+    """
+    print(f"[API] 收到删除请求，用户: {req.user}，类别: {req.category}")
+    try:
+        user_store = get_user_store(req.user)
+        print(f"[API] 获取用户存储成功")
+        deleted_count = user_store.delete_by_category(req.category)
+        print(f"[API] 删除操作完成，删除数量: {deleted_count}")
+        return {"code": 0, "message": "OK", "data": {"deleted": deleted_count}}
+    except Exception as e:
+        print(f"[API] 删除失败: {e}")
+        raise HTTPException(status_code=500, detail=f"删除失败: {e}")

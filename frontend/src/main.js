@@ -1,8 +1,12 @@
 import { createApp } from 'vue'
-import TestView from './views/TestView.vue'
+import App from './App.vue'
+import router from './router/index.js'
 
 // 创建Vue应用实例
-const app = createApp(TestView)
+const app = createApp(App)
 
-// 挂载应用到DOM
+// 使用路由
+app.use(router)
+
+// 挂载应用
 app.mount('#app')
