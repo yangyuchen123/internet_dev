@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
-
+from typing import Union
 import os
+import pymysql  # 提前导入，避免运行时错误
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -20,6 +21,7 @@ except ImportError:
     from services.db import like_search
     from services.hybrid_search import merge_results
 
+
 # 数据库连接函数
 def get_db_connection():
     return pymysql.connect(
@@ -31,99 +33,10 @@ def get_db_connection():
         cursorclass=pymysql.cursors.DictCursor
     )
 
-# 确保导入pymysql
-try:
-    import pymysql
-except ImportError:
-    pass  # 假设services.db中已处理pymysql导入
-
-
-app = FastAPI(title="RAG Service", version="0.1")
-
-# 配置CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # 在生产环境中应该设置具体的域名
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-embedder = Embedder(model_name=MODEL_NAME)
-
-# 为每个用户创建独立的VectorStore实例的字典
-user_stores = {}
-
-# 为指定用户获取或创建VectorStore实例
-def get_user_store(user: str) -> VectorStore:
-    if user not in user_stores:
-        # 为每个用户创建独立的索引和元数据路径
-        user_index_path = os.path.join(os.path.dirname(INDEX_PATH), f"index_{user}.faiss")
-        user_meta_path = os.path.join(os.path.dirname(META_PATH), f"meta_{user}.json")
-        user_stores[user] = VectorStore(embedder=embedder, index_path=user_index_path, meta_path=user_meta_path)
-    return user_stores[user]
-
-
-class IngestRaw(BaseModel):
-    source: str = Field('raw', description="来源：raw 或 db")
-    title: str
-    category: str
-    text: str
-    keywords: Optional[str] = None
-    chunkSize: int = 500
-    chunkOverlap: int = 50
-    user: str = Field(..., description="用户标识")
-
-
-class IngestDB(BaseModel):
-    source: str = Field('db', description="来源：raw 或 db")
-    ids: List[int]
-    user: str = Field(..., description="用户标识")
-
-
-class HybridSearchReq(BaseModel):
-    q: str
-    topK: int = 5
-    category: Optional[str] = None
-    alpha: float = 0.7
-    beta: float = 0.3
-    user: str = Field(..., description="用户标识")
-
-
-class SearchReq(BaseModel):
-    q: str
-    topK: int = 5
-    category: Optional[str] = None
-    user: str = Field(..., description="用户标识")
-
-
-class SyncDBReq(BaseModel):
-    category: Optional[str] = None
-    limit: int = 1000
-    user: str = Field(..., description="用户标识")
-
-
-class HealthReq(BaseModel):
-    user: str = Field(..., description="用户标识")
-
-
-class DeleteByTitleReq(BaseModel):
-    user: str = Field(..., description="用户标识")
-    title: str = Field(..., description="要删除的标题")
-
-
-class DeleteByCategoryReq(BaseModel):
-    user: str = Field(..., description="用户标识")
-    category: str = Field(..., description="要删除的类别")
-
-
-@app.post("/rag/health")
-def health(req: HealthReq) -> Dict[str, Any]:
-    user_store = get_user_store(req.user)
-    return {"code": 0, "message": "OK", "data": {"index_count": user_store.count(), "model": MODEL_NAME}}
-
-
+# 工具函数移到顶部，避免干扰路由注册
 def chunk_text(text: str, size: int, overlap: int) -> List[str]:
+    # 对文本进行简单的按字符数分片（不考虑语义）
+    # 确保输入文本非空
     text = (text or '').strip()
     if not text:
         return []
@@ -138,42 +51,119 @@ def chunk_text(text: str, size: int, overlap: int) -> List[str]:
             break
     return chunks
 
+# 初始化 FastAPI 实例
+app = FastAPI(title="RAG Service", version="0.1")
 
-@app.post("/rag/ingest")
-def ingest(payload: Dict[str, Any]):
+# 配置CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # 在生产环境中应该设置具体的域名
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# 初始化嵌入模型
+embedder = Embedder(model_name=MODEL_NAME)
+
+# 为每个用户创建独立的VectorStore实例的字典
+user_stores = {}
+
+# 为指定用户获取或创建VectorStore实例
+def get_user_store(user: str) -> VectorStore:
+    if user not in user_stores:
+        user_stores[user] = VectorStore(embedder=embedder, user_id=user)
+        print(f"[APP] 为用户 {user} 创建了专属向量存储")
+    return user_stores[user]
+
+# Pydantic 模型定义（集中放在一起，便于维护）
+class IngestRaw(BaseModel):
+    source: str = Field('raw', description="来源：raw 或 db")
+    title: str = Field(..., description="标题")
+    category: str = Field(..., description="类别")
+    text: str = Field(..., description="文本内容")
+    keywords: Optional[str] = None
+    chunkSize: int = 500
+    chunkOverlap: int = 50
+    user: str = Field(..., description="用户标识")
+
+class IngestDB(BaseModel):
+    source: str = Field('db', description="来源：raw 或 db")
+    ids: List[int] = Field(..., description="要同步的数据库ID列表")
+    user: str = Field(..., description="用户标识")
+
+class HybridSearchReq(BaseModel):
+    q: str = Field(..., description="查询文本") 
+    topK: int = Field(5, description="返回的结果数量")
+    category: Optional[str] = None
+    alpha: float = 0.7
+    beta: float = 0.3
+    user: str = Field(..., description="用户标识")
+
+class SearchReq(BaseModel):
+    q: str = Field(..., description="查询文本") 
+    topK: int = Field(5, description="返回的结果数量")
+    category: Optional[str] = None
+    user: str = Field(..., description="用户标识")
+
+class SyncDBReq(BaseModel):
+    category: Optional[str] = None
+    limit: int = 1000
+    user: str = Field(..., description="用户标识")
+
+class HealthReq(BaseModel):
+    user: str = Field(..., description="用户标识")
+
+class DeleteByTitleReq(BaseModel):
+    user: str = Field(..., description="用户标识")
+    title: str = Field(..., description="要删除的标题")
+
+class DeleteByCategoryReq(BaseModel):
+    user: str = Field(..., description="用户标识")
+    category: str = Field(..., description="要删除的类别")
+
+# 接口定义（按功能分类，装饰器紧贴函数）
+@app.post("/rag/health", response_model=Dict[str, Any])
+def health(req: HealthReq) -> Dict[str, Any]:
+    """健康检查接口"""
+    if req.user == '':
+        return {"code": 0, "message": "OK", "data": {"model": MODEL_NAME}}
+    # 补充完整的返回逻辑，避免语法风险
+    return {"code": 0, "message": "OK", "user": req.user, "data": {"model": MODEL_NAME}}
+
+@app.post("/rag/ingest", response_model=Dict[str, Any])
+def ingest( req: Union[IngestRaw, IngestDB]):
+    """数据入库接口（支持raw文本/数据库ID）"""
     # 从payload中获取user
-    user = payload.get('user')
+    user = req.user
     if not user:
         raise HTTPException(status_code=400, detail="参数 user 不能为空")
     # 获取用户的VectorStore实例
     user_store = get_user_store(user)
-    
-    source = payload.get('source', 'raw')
-    if source == 'raw':
-        try:
-            req = IngestRaw(**payload)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"参数错误: {e}")
+    if isinstance(req, IngestRaw):
+        # 处理 Raw 模式
+        if req.source != 'raw': 
+            # 这是一个防御性检查，因为 Pydantic 可能已经根据字段匹配了
+            pass 
+            
         chunks = chunk_text(req.text, req.chunkSize, req.chunkOverlap)
         metas = [{
             'title': req.title,
             'category': req.category,
             'keywords': req.keywords or '',
             'content': c,
-            'user': user  # 添加用户信息到元数据
+            'user': user
         } for c in chunks]
+        
         try:
             user_store.add_texts(chunks, metas)
         except Exception as e:
-            # 捕获底层入库错误（如 faiss/文件写入/模型编码异常），返回明确错误信息
             raise HTTPException(status_code=500, detail=f"向量入库失败: {e}")
         return {"code": 0, "message": "OK", "data": {"ingested": len(chunks)}}
-    elif source == 'db':
-        try:
-            req = IngestDB(**payload)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"参数错误: {e}")
-        # 从 DB 获取内容，按记录入库（不再分片假设 DB 已分片）
+
+    elif isinstance(req, IngestDB):
+        # 处理 DB 模式
+        # ... (这里放入你原来的 DB 处理逻辑) ...
         texts, metas = [], []
         # 简化：逐个 id 做单条 LIKE 检索的近似（真实应按 id 精确查询）
         for kid in req.ids:
@@ -197,20 +187,25 @@ def ingest(payload: Dict[str, Any]):
         user_store.add_texts(texts, metas)
         return {"code": 0, "message": "OK", "data": {"ingested": len(texts)}}
     else:
-        raise HTTPException(status_code=400, detail="不支持的 source")
+        # 理论上 FastAPI 验证通过后不会走到这里
+        raise HTTPException(status_code=400, detail="无效的请求参数")
 
 
-@app.post("/rag/search")
+@app.post("/rag/search", response_model=Dict[str, Any])
 def search(req: SearchReq):
+    """纯向量检索接口"""
     if not req.q:
         raise HTTPException(status_code=400, detail="参数 q 不能为空")
     user_store = get_user_store(req.user)
-    res = user_store.search(req.q, topK=req.topK, category=req.category)
-    return {"code": 0, "message": "OK", "data": res}
+    try:
+        res = user_store.search(req.q, topK=req.topK, category=req.category)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"向量检索失败: {e}")
+    return {"code": 0, "message": "OK", "user": req.user, "data": res}
 
-
-@app.post("/rag/hybrid-search")
+@app.post("/rag/hybrid-search", response_model=Dict[str, Any])
 def hybrid_search(req: HybridSearchReq):
+    """混合检索接口（向量+关键词）"""
     if not req.q:
         raise HTTPException(status_code=400, detail="参数 q 不能为空")
     # 获取用户的VectorStore实例
@@ -225,9 +220,9 @@ def hybrid_search(req: HybridSearchReq):
     merged = merge_results(vec_res, kw_res, alpha=req.alpha, beta=req.beta)
     return {"code": 0, "message": "OK", "data": merged[:req.topK]}
 
-
-@app.post("/rag/sync-db")
+@app.post("/rag/sync-db", response_model=Dict[str, Any])
 def sync_db(req: SyncDBReq):
+    """批量同步数据库内容到向量库"""
     # 获取用户的VectorStore实例
     user_store = get_user_store(req.user)
     # 从 DB 批量读取构建索引（简单示例：按 LIKE 拉取全部）
@@ -243,12 +238,9 @@ def sync_db(req: SyncDBReq):
     user_store.add_texts(texts, metas)
     return {"code": 0, "message": "OK", "data": {"ingested": len(texts)}}
 
-
-@app.post("/rag/delete-by-title")
+@app.post("/rag/delete-by-title", response_model=Dict[str, Any])
 def delete_by_title(req: DeleteByTitleReq):
-    """
-    根据标题删除用户向量库中的内容
-    """
+    """根据标题删除用户向量库中的内容"""
     print(f"[API] 收到删除请求，用户: {req.user}，标题: {req.title}")
     try:
         user_store = get_user_store(req.user)
@@ -260,12 +252,9 @@ def delete_by_title(req: DeleteByTitleReq):
         print(f"[API] 删除失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除失败: {e}")
 
-
-@app.post("/rag/delete-by-category")
+@app.post("/rag/delete-by-category", response_model=Dict[str, Any])
 def delete_by_category(req: DeleteByCategoryReq):
-    """
-    根据类别删除用户向量库中的内容
-    """
+    """根据类别删除用户向量库中的内容"""
     print(f"[API] 收到删除请求，用户: {req.user}，类别: {req.category}")
     try:
         user_store = get_user_store(req.user)
@@ -276,3 +265,4 @@ def delete_by_category(req: DeleteByCategoryReq):
     except Exception as e:
         print(f"[API] 删除失败: {e}")
         raise HTTPException(status_code=500, detail=f"删除失败: {e}")
+

@@ -34,3 +34,10 @@ SERVICE_CONFIG = {
     'port': 8000,
     'log_level': 'info'
 }
+
+# Qdrant向量数据库配置
+QDRANT_CONFIG = {
+    'host': os.getenv('QDRANT_HOST', 'localhost'),
+    'port': int(os.getenv('QDRANT_PORT', '6333')),
+    'collection_name': os.getenv('QDRANT_COLLECTION_NAME', 'knowledge_base')
+}

@@ -1,24 +1,50 @@
+version: '3.8'
+
 services:
   rag-service:
-    build: .
+    build: 
+      context: .
+      dockerfile: Dockerfile
     container_name: rag-service
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data
+      - ./data:/app/data:rw
       - ./model:/app/model:ro
+      - .:/app:rw
     environment:
-        - RAG_MODEL_NAME=/app/model
-        - RAG_ON_DOCKER=Y
-        - RAG_DB_HOST=rag-mysql
-        - RAG_DB_PORT=3306
-        - RAG_DB_USER=demo_user
-        - RAG_DB_PASS=demo_pass_123
-        - RAG_DB_NAME=demo_db
+      - RAG_ON_DOCKER=Y
+      - RAG_DB_HOST=rag-mysql
+      - RAG_DB_PORT=3306
+      - RAG_DB_USER=demo_user
+      - RAG_DB_PASS=demo_pass_123
+      - RAG_DB_NAME=demo_db
+      - RAG_DATA_DIR=/app/data/kb
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
     depends_on:
-      - rag-mysql
+      rag-mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
     networks:
       - app-network
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qdrant
+    ports:
+      - "6333:6333"  # 服务API端口
+      - "6334:6334"  # gRPC端口
+    volumes:
+      - ./qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__LOG_LEVEL=INFO
+    networks:
+      - app-network
+    restart: unless-stopped
 
   rag-mysql:
     image: mysql:8.0
@@ -32,33 +58,41 @@ services:
       - MYSQL_PASSWORD=demo_pass_123
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./database/init:/docker-entrypoint-initdb.d:ro
     networks:
       - app-network
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+    restart: unless-stopped
+    command: --default-authentication-plugin=mysql_native_password
 
   phpmyadmin:
-    image: phpmyadmin/phpmyadmin
+    image: phpmyadmin/phpmyadmin:latest
     container_name: phpmyadmin-demo
     environment:
       - PMA_HOST=rag-mysql
       - PMA_PORT=3306
       - PMA_USER=demo_user
       - PMA_PASSWORD=demo_pass_123
+      - PMA_ARBITRARY=0
     ports:
       - "8081:80"
     depends_on:
-      - rag-mysql
+      rag-mysql
     networks:
       - app-network  
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
 
 volumes:
   mysql_data:
+    driver: local
+  qdrant_data:
+    driver: local
 
 networks:
   app-network:
-    external: false
+    driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16

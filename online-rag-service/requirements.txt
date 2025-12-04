@@ -6,5 +6,4 @@ python-dotenv
 pydantic
 pymysql
 numpy
-huggingface_hub
 tqdm
