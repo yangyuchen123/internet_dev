@@ -12,3 +12,6 @@ target/
 .env
 rag-service/data
 rag-service/model
+rag-service/services/__pycache__
+online-rag-service/services/__pycache__
+online-rag-service/qdrant_data

@@ -81,25 +81,50 @@ services:
 
   rag-service:
     build:
-      context: ./rag-service
+      context: ./online-rag-service
       dockerfile: Dockerfile
-    container_name: rag-service
+    container_name: ${PROJECT_NAME:-ai-agent-platform}-rag-service
     ports:
       - "8000:8000"
     volumes:
-      - ./rag-service:/app
+      - ./online-rag-service:/app:rw
+      - ./online-rag-service/data:/app/data:rw
+      - ./online-rag-service/model:/app/model:ro
     environment:
-        RAG_MODEL_NAME: /app/model
+        RAG_MODEL_NAME: ${RAG_MODEL_NAME:-text-embedding-v1}
         RAG_ON_DOCKER: Y
         RAG_DB_HOST: ${MYSQL_DATABASE_HOST:-mysql}
         RAG_DB_PORT: ${MYSQL_DATABASE_PORT:-3306}
         RAG_DB_USER: ${MYSQL_USER:-test_user}
         RAG_DB_PASS: ${MYSQL_PASSWORD:-12345678}
         RAG_DB_NAME: ${MYSQL_DATABASE:-ai_agent_db}
+        RAG_DATA_DIR: /app/data/kb
+        QDRANT_HOST: ${QDRANT_HOST:-qdrant}
+        QDRANT_PORT: ${QDRANT_PORT:-6333}
+        QDRANT_GRPC_PORT: ${QDRANT_GRPC_PORT:-6334}
     depends_on:
       - mysql
+      - qdrant
     networks:
       - app-network
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: ${PROJECT_NAME:-ai-agent-platform}-qdrant
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"  # 服务API端口
+      - "${QDRANT_GRPC_PORT:-6334}:6334"  # gRPC端口
+    volumes:
+      - qdrant_data:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__GRPC_PORT=${QDRANT_GRPC_PORT:-6334}
+      - QDRANT__LOG_LEVEL=INFO
+    networks:
+      - app-network
+    restart: unless-stopped
+
+
 
   # redis:
   #   image: redis:7-alpine
@@ -165,6 +190,7 @@ services:
 
 volumes:
   backend_mysql_data:
+  qdrant_data:
 
 networks:
   app-network:
