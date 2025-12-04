@@ -13,9 +13,10 @@ from config import QDRANT_CONFIG
 
 
 class VectorStore:
-    def __init__(self, embedder,  user_id: Optional[str] = None):
+    def __init__(self, embedder, user_id: Optional[str] = None):
         self.embedder = embedder
         self.lock = threading.Lock()
+        # 保留user_id参数以便在元数据中使用，但不再用于集合命名
         self.user_id = user_id
         
         # 使用Qdrant服务
@@ -24,16 +25,9 @@ class VectorStore:
             port=QDRANT_CONFIG['port']
         )
         
-        # 动态生成集合名称，支持多用户空间
-        base_collection_name = QDRANT_CONFIG.get('collection_name', 'knowledge_base')
-        if user_id:
-            # 为特定用户创建专用集合
-            self.collection_name = f"{base_collection_name}_{user_id}"
-            print(f"[VectorStore] 使用用户专属集合: {self.collection_name}")
-        else:
-            # 使用默认集合
-            self.collection_name = base_collection_name
-            print(f"[VectorStore] 使用默认集合: {self.collection_name}")
+        # 所有用户共享同一个集合
+        self.collection_name = QDRANT_CONFIG.get('collection_name', 'knowledge_base')
+        print(f"[VectorStore] 使用共享集合: {self.collection_name}")
         
         # 确保集合存在
         self._ensure_collection()
@@ -52,9 +46,22 @@ class VectorStore:
             print(f"[VectorStore] 集合 {self.collection_name} 可能已存在或创建失败: {str(e)}")
 
 
-    def count(self) -> int:
+    def count(self, user: str = None, category: str = None) -> int:
         try:
-            return self.client.count(collection_name=self.collection_name).count
+            # 构建过滤条件
+            filter_conditions = []
+            if user:
+                filter_conditions.append({"key": "user", "match": {"value": user}})
+            if category:
+                filter_conditions.append({"key": "category", "match": {"value": category}})
+            
+            # 如果有过滤条件，则使用过滤查询
+            if filter_conditions:
+                filter_condition = {"must": filter_conditions}
+                return self.client.count(collection_name=self.collection_name, filter=filter_condition).count
+            else:
+                # 无过滤条件，返回所有记录数
+                return self.client.count(collection_name=self.collection_name).count
         except Exception:
             return 0
 
@@ -72,12 +79,17 @@ class VectorStore:
             if len(metas) > 1:
                 print(f"[VectorStore] 最后一条元数据示例: {json.dumps(metas[-1], ensure_ascii=False, indent=2)}")
         
+        # 从元数据中提取用户信息（只需要第一个用户信息用于统计）
+        user = None
+        if metas and 'user' in metas[0]:
+            user = metas[0]['user']
+        
         vecs = self.embedder.encode(texts)
         vecs = np.asarray(vecs, dtype='float32')
         
         with self.lock:
-            # 记录添加前的索引大小
-            before_count = self.count()
+            # 记录添加前的索引大小（传递用户参数）
+            before_count = self.count(user=user)
             
             # 准备要添加的点
             points = []
@@ -89,14 +101,14 @@ class VectorStore:
             # 添加到Qdrant
             self.client.upsert(collection_name=self.collection_name, points=points)
             
-            # 记录添加后的索引大小
-            after_count = self.count()
+            # 记录添加后的索引大小（传递用户参数）
+            after_count = self.count(user=user)
             print(f"[VectorStore] 索引更新: 从 {before_count} 条增加到 {after_count} 条记录")
         
             # 保存更改（Qdrant自动保存）
             print(f"[VectorStore] 数据已保存到Qdrant")
 
-    def search(self, q: str, topK: int = 5, category: Optional[str] = None) -> List[Dict]:
+    def search(self, q: str, topK: int = 5, category: Optional[str] = None, user: str = None) -> List[Dict]:
         """
         在Qdrant中检索相似文本 (使用 query_points 的修正版)
         """
@@ -105,11 +117,16 @@ class VectorStore:
         qv = np.asarray(qv, dtype='float32')
         
         # 构建过滤条件
-        filters = None
+        conditions = []
+        # 添加用户过滤条件，确保用户只能访问自己的数据
+        if user:
+            conditions.append(FieldCondition(key="user", match=MatchValue(value=user)))
+        # 添加类别过滤条件
         if category:
-            filters = Filter(
-                must=[FieldCondition(key="category", match=MatchValue(value=category))]
-            )
+            conditions.append(FieldCondition(key="category", match=MatchValue(value=category)))
+        
+        filters = Filter(must=conditions) if conditions else None
+
         
         # 使用 query_points (确定你的客户端有这个方法)
         results = self.client.query_points(
@@ -135,17 +152,20 @@ class VectorStore:
         return res
     
     
-    def delete_by_title(self, title: str) -> int:
+    def delete_by_title(self, title: str, user: str = None) -> int:
         """根据标题直接删除 (优化版)"""
-        print(f"[VectorStore] 开始删除标题为 '{title}' 的记录")
+        print(f"[VectorStore] 开始删除标题为 '{title}' 的记录，用户: {user}")
         if not title:
             return 0
             
         with self.lock:
             # 1. 构建过滤器
-            filter = Filter(
-                must=[FieldCondition(key="title", match=MatchValue(value=title))]
-            )
+            conditions = [FieldCondition(key="title", match=MatchValue(value=title))]
+            # 添加用户过滤条件，确保用户只能删除自己的数据
+            if user:
+                conditions.append(FieldCondition(key="user", match=MatchValue(value=user)))
+            
+            filter = Filter(must=conditions)
             
             # 2. 直接按条件删除 (原子操作，更快)
             # 注意：delete 操作通常返回 UpdateResult，不直接包含删除行数
@@ -163,16 +183,19 @@ class VectorStore:
                 print(f"[VectorStore] 删除失败: {e}")
                 return 0
 
-    def delete_by_category(self, category: str) -> int:
+    def delete_by_category(self, category: str, user: str = None) -> int:
         """根据类别直接删除 (优化版)"""
-        print(f"[VectorStore] 开始删除类别为 '{category}' 的记录")
+        print(f"[VectorStore] 开始删除类别为 '{category}' 的记录，用户: {user}")
         if not category:
             return 0
             
         with self.lock:
-            filter = Filter(
-                must=[FieldCondition(key="category", match=MatchValue(value=category))]
-            )
+            conditions = [FieldCondition(key="category", match=MatchValue(value=category))]
+            # 添加用户过滤条件，确保用户只能删除自己的数据
+            if user:
+                conditions.append(FieldCondition(key="user", match=MatchValue(value=user)))
+            
+            filter = Filter(must=conditions)
             
             try:
                 self.client.delete(

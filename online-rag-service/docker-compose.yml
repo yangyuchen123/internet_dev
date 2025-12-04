@@ -3,15 +3,13 @@ version: '3.8'
 services:
   rag-service:
     build: 
-      context: .
+      context: ./src
       dockerfile: Dockerfile
     container_name: rag-service
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/app/data:rw
-      - ./model:/app/model:ro
-      - .:/app:rw
+      - ./src:/app:rw
     environment:
       - RAG_ON_DOCKER=Y
       - RAG_DB_HOST=rag-mysql

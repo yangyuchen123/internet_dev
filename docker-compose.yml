@@ -81,15 +81,13 @@ services:
 
   rag-service:
     build:
-      context: ./online-rag-service
+      context: ./online-rag-service/src
       dockerfile: Dockerfile
     container_name: ${PROJECT_NAME:-ai-agent-platform}-rag-service
     ports:
       - "8000:8000"
     volumes:
-      - ./online-rag-service:/app:rw
-      - ./online-rag-service/data:/app/data:rw
-      - ./online-rag-service/model:/app/model:ro
+      - ./online-rag-service/src:/app/model:ro
     environment:
         RAG_MODEL_NAME: ${RAG_MODEL_NAME:-text-embedding-v1}
         RAG_ON_DOCKER: Y
@@ -116,7 +114,7 @@ services:
       - "${QDRANT_PORT:-6333}:6333"  # 服务API端口
       - "${QDRANT_GRPC_PORT:-6334}:6334"  # gRPC端口
     volumes:
-      - qdrant_data:/qdrant/storage
+      - ./online-rag-service/qdrant_data:/qdrant/storage
     environment:
       - QDRANT__SERVICE__GRPC_PORT=${QDRANT_GRPC_PORT:-6334}
       - QDRANT__LOG_LEVEL=INFO
@@ -190,7 +188,6 @@ services:
 
 volumes:
   backend_mysql_data:
-  qdrant_data:
 
 networks:
   app-network:

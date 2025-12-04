@@ -1,4 +1,4 @@
-FROM python:3.10
+FROM python:3.10-slim
 
 # 设置非root用户
 RUN useradd -m appuser
@@ -27,9 +27,6 @@ RUN pip install --upgrade pip setuptools && \
 
 # 复制RAG服务代码
 COPY --chown=appuser:appuser . .
-
-# 创建数据目录
-RUN mkdir -p /app/data/kb
 
 # 暴露服务端口
 EXPOSE 8000
