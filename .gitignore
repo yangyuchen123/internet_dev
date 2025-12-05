@@ -10,7 +10,7 @@ target/
 *.log
 # 环境变量文件（实际值）
 .env
-rag-service/data
+rag-service
 rag-service/model
 rag-service/services/__pycache__
 online-rag-service/services/__pycache__

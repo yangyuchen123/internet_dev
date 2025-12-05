@@ -100,6 +100,7 @@ services:
         QDRANT_HOST: ${QDRANT_HOST:-qdrant}
         QDRANT_PORT: ${QDRANT_PORT:-6333}
         QDRANT_GRPC_PORT: ${QDRANT_GRPC_PORT:-6334}
+        DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY:-}
     depends_on:
       - mysql
       - qdrant
