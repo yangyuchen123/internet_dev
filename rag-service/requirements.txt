@@ -1,9 +1,0 @@
-fastapi
-uvicorn
-faiss-cpu
-sentence-transformers
-pydantic
-pymysql
-numpy
-huggingface_hub
-tqdm
