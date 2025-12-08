@@ -3,7 +3,6 @@ const registerCors = require('@fastify/cors');
 const registerSwagger = require('@fastify/swagger');
 const registerSwaggerUI = require('@fastify/swagger-ui');
 const responderPlugin = require('./plugins/responder');
-const openAIPlugin = require('./plugins/openai');
 const mysqlPlugin = require('./plugins/mysql');
 const { registerRoutes } = require('./routes');
 
@@ -45,7 +44,6 @@ const buildServer = ({ fastifyOptions } = {}) => {
 
   app.register(responderPlugin);
   app.register(mysqlPlugin);
-  app.register(openAIPlugin);
   app.register(registerRoutes);
 
   return app;

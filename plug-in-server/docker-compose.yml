@@ -24,6 +24,8 @@ services:
       - MYSQL_USER=test_user
       - MYSQL_PASSWORD=12345678
       - MYSQL_DATABASE=ai_agent_db
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}  # 从主机环境传递 Deepseek API Key
+      - OPENAI_API_KEY=${OPENAI_API_KEY}      # 从主机环境传递 OpenAI API Key
 
     working_dir: /app  # 容器内工作目录（进入容器后默认在 /app，对应本地项目根目录）
     stdin_open: true   # 兼容 React 等项目的终端交互需求
@@ -34,6 +36,7 @@ services:
 
     depends_on:
       - backend-dev  # 等待后端服务启动（不要求健康检查）
+      - mysql-dev
     networks:
       - shared-network  # 加入与 db 相同的共享网络
 

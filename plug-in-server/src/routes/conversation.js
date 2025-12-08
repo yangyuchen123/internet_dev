@@ -11,12 +11,35 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
       summary: 'Create a conversation',
       body: {
         type: 'object',
-        required: ['agentId', 'userId'],
+        required: ['userId', 'model'],
         properties: {
-          agentId: { type: 'integer', minimum: 1 },
+          agentIds: {
+            type: 'array',
+            nullable: true,
+            minItems: 1,
+            items: { type: 'integer', minimum: 1 }
+          },
+          mainAgent: { type: 'integer', minimum: 1, nullable: true },
           userId: { type: 'integer', minimum: 1 },
           title: { type: 'string', maxLength: 255 },
-          metadata: { type: 'object', nullable: true, additionalProperties: true }
+          metadata: { type: 'object', nullable: true, additionalProperties: true },
+          messages: {
+            type: 'array',
+            nullable: true,
+            minItems: 1,
+            items: {
+              type: 'object',
+              required: ['role', 'content'],
+              properties: {
+                role: { type: 'string' },
+                content: { type: 'string' }
+              }
+            }
+          },
+          provider: { type: 'string', nullable: true },
+          model: { type: 'string', minLength: 1 },
+          temperature: { type: 'number', minimum: 0, maximum: 2, nullable: true },
+          maxTokens: { type: 'integer', minimum: 1, nullable: true }
         }
       },
       response: {
@@ -34,9 +57,18 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
                       properties: {
                         id: { type: 'integer' },
                         userId: { type: 'integer' },
-                        agentId: { type: 'integer' },
+                        mainAgent: { type: ['integer', 'null'] },
+                        agentIds: {
+                          type: 'array',
+                          items: { type: 'integer' },
+                          nullable: true
+                        },
                         title: { type: ['string', 'null'] },
                         metadata: {},
+                        provider: { type: ['string', 'null'] },
+                        model: { type: ['string', 'null'] },
+                        temperature: { type: ['number', 'null'] },
+                        maxTokens: { type: ['integer', 'null'] },
                         createdAt: { type: ['string', 'null'], format: 'date-time' },
                         updatedAt: { type: ['string', 'null'], format: 'date-time' }
                       }
@@ -53,11 +85,18 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
       }
     },
     handler: async (request, reply) => {
-      const { agentId, userId, title, metadata } = request.body || {};
-
-      if (agentId === undefined || agentId === null) {
-        return reply.sendError('agentId is required', 400);
-      }
+      const {
+        agentIds,
+        mainAgent,
+        userId,
+        title,
+        metadata,
+        messages,
+        provider,
+        model,
+        temperature,
+        maxTokens
+      } = request.body || {};
 
       if (userId === undefined || userId === null) {
         return reply.sendError('userId is required', 400);
@@ -67,12 +106,44 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
         return reply.sendError('Database is not configured', 503);
       }
 
-      const normalizedAgentId = Number(agentId);
-      const normalizedUserId = Number(userId);
+      const normalizedAgentIds = [];
+      const seenAgentIds = new Set();
 
-      if (!Number.isInteger(normalizedAgentId) || normalizedAgentId <= 0) {
-        return reply.sendError('agentId must be a positive integer', 400);
+      let normalizedMainAgent = null;
+      if (mainAgent !== undefined && mainAgent !== null) {
+        const parsedMainAgent = Number(mainAgent);
+        if (!Number.isInteger(parsedMainAgent) || parsedMainAgent <= 0) {
+          return reply.sendError('mainAgent must be a positive integer when provided', 400);
+        }
+        normalizedMainAgent = parsedMainAgent;
+        seenAgentIds.add(normalizedMainAgent);
       }
+
+      const addAgentId = (candidate) => {
+        if (!seenAgentIds.has(candidate)) {
+          seenAgentIds.add(candidate);
+          normalizedAgentIds.push(candidate);
+        }
+      };
+
+      if (agentIds !== undefined && agentIds !== null) {
+        if (!Array.isArray(agentIds)) {
+          return reply.sendError('agentIds must be an array when provided', 400);
+        }
+        if (agentIds.length === 0) {
+          return reply.sendError('agentIds must contain at least one entry when provided', 400);
+        }
+
+        for (const value of agentIds) {
+          const parsed = Number(value);
+          if (!Number.isInteger(parsed) || parsed <= 0) {
+            return reply.sendError('agentIds must contain positive integers', 400);
+          }
+          addAgentId(parsed);
+        }
+      }
+
+      const normalizedUserId = Number(userId);
 
       if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
         return reply.sendError('userId must be a positive integer', 400);
@@ -80,18 +151,79 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
 
       const normalizedTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
 
+      let normalizedProvider = null;
+      if (provider !== undefined && provider !== null) {
+        if (typeof provider !== 'string') {
+          return reply.sendError('provider must be a string', 400);
+        }
+        const trimmedProvider = provider.trim();
+        normalizedProvider = trimmedProvider.length > 0 ? trimmedProvider : null;
+      }
+
+      if (model === undefined || model === null) {
+        return reply.sendError('model is required', 400);
+      }
+
+      if (typeof model !== 'string') {
+        return reply.sendError('model must be a string', 400);
+      }
+
+      const trimmedModel = model.trim();
+
+      if (trimmedModel.length === 0) {
+        return reply.sendError('model must be a non-empty string', 400);
+      }
+
+      const normalizedModel = trimmedModel;
+
+      let normalizedTemperature = null;
+      if (temperature !== undefined && temperature !== null) {
+        const parsedTemperature = Number(temperature);
+        if (Number.isNaN(parsedTemperature)) {
+          return reply.sendError('temperature must be a number', 400);
+        }
+        if (parsedTemperature < 0 || parsedTemperature > 2) {
+          return reply.sendError('temperature must be between 0 and 2', 400);
+        }
+        normalizedTemperature = Number(parsedTemperature.toFixed(2));
+      }
+
+      let normalizedMaxTokens = null;
+      if (maxTokens !== undefined && maxTokens !== null) {
+        const parsedMaxTokens = Number(maxTokens);
+        if (!Number.isInteger(parsedMaxTokens) || parsedMaxTokens <= 0) {
+          return reply.sendError('maxTokens must be a positive integer', 400);
+        }
+        normalizedMaxTokens = parsedMaxTokens;
+      }
+
+      let metadataPayload = metadata;
+
+      if (metadataPayload === undefined && messages !== undefined) {
+        metadataPayload = { messages };
+      }
+
       let metadataJson;
 
       try {
-        metadataJson = ensureJson(metadata, 'metadata');
+        metadataJson = ensureJson(metadataPayload, 'metadata');
       } catch (error) {
         return reply.sendError(error.message, 400);
       }
 
       try {
         const result = await fastify.mysql.query(
-          'INSERT INTO conversation (creator_id, agent_id, title, metadata) VALUES (?, ?, ?, ?)',
-          [normalizedUserId, normalizedAgentId, normalizedTitle, metadataJson]
+          'INSERT INTO conversation (creator_id, title, metadata, provider, model, temperature, max_tokens, main_agent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+          [
+            normalizedUserId,
+            normalizedTitle,
+            metadataJson,
+            normalizedProvider,
+            normalizedModel,
+            normalizedTemperature,
+            normalizedMaxTokens,
+            normalizedMainAgent
+          ]
         );
 
         const conversationId = result && typeof result.insertId === 'number' ? result.insertId : null;
@@ -100,8 +232,23 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
           return reply.sendError('Failed to determine created conversation id', 500);
         }
 
+        if (normalizedAgentIds.length > 0) {
+          try {
+            for (const agentIdValue of normalizedAgentIds) {
+              await fastify.mysql.query(
+                'INSERT INTO agent_conversation (agent_id, conversation_id) VALUES (?, ?)',
+                [agentIdValue, conversationId]
+              );
+            }
+          } catch (linkError) {
+            await fastify.mysql.query('DELETE FROM agent_conversation WHERE conversation_id = ?', [conversationId]);
+            await fastify.mysql.query('DELETE FROM conversation WHERE id = ?', [conversationId]);
+            throw linkError;
+          }
+        }
+
         const rows = await fastify.mysql.query(
-          'SELECT id, creator_id, agent_id, title, metadata, created_at, updated_at FROM conversation WHERE id = ? LIMIT 1',
+          'SELECT id, creator_id, title, metadata, provider, model, temperature, max_tokens, main_agent_id, created_at, updated_at FROM conversation WHERE id = ? LIMIT 1',
           [conversationId]
         );
 
@@ -111,14 +258,46 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
 
         const row = rows[0];
 
+        let linkedAgentIds = [];
+        if (normalizedAgentIds.length > 0) {
+          const agentLinkRows = await fastify.mysql.query(
+            'SELECT agent_id FROM agent_conversation WHERE conversation_id = ? ORDER BY agent_id ASC',
+            [conversationId]
+          );
+          if (Array.isArray(agentLinkRows) && agentLinkRows.length > 0) {
+            linkedAgentIds = agentLinkRows.map((link) => Number(link.agent_id));
+          } else {
+            linkedAgentIds = normalizedAgentIds;
+          }
+        }
+
+        const mainAgentIdResponse =
+          row.main_agent_id === undefined || row.main_agent_id === null
+            ? null
+            : Number(row.main_agent_id);
+
+        if (mainAgentIdResponse !== null && !linkedAgentIds.includes(mainAgentIdResponse)) {
+          linkedAgentIds = [mainAgentIdResponse, ...linkedAgentIds];
+        }
+
+        const conversationIdResponse = Number(row.id);
+        const userIdResponse = Number(row.creator_id);
+
         return reply.sendSuccess(
           {
             conversation: {
-              id: row.id,
-              userId: row.creator_id,
-              agentId: row.agent_id,
+              id: conversationIdResponse,
+              userId: userIdResponse,
+              mainAgent: mainAgentIdResponse,
+              agentIds: linkedAgentIds,
               title: row.title || null,
               metadata: parseJsonColumn(row.metadata),
+              provider: row.provider || null,
+              model: row.model || null,
+              temperature:
+                row.temperature === undefined || row.temperature === null ? null : Number(row.temperature),
+              maxTokens:
+                row.max_tokens === undefined || row.max_tokens === null ? null : Number(row.max_tokens),
               createdAt: normalizeDate(row.created_at),
               updatedAt: normalizeDate(row.updated_at)
             }
@@ -131,6 +310,9 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
         if (error && error.code === 'ER_NO_REFERENCED_ROW_2') {
           const message = typeof error.sqlMessage === 'string' ? error.sqlMessage : '';
           if (message.includes('agent_id')) {
+            return reply.sendError('Agent does not exist', 404);
+          }
+          if (message.includes('main_agent_id')) {
             return reply.sendError('Agent does not exist', 404);
           }
           if (message.includes('creator_id')) {
@@ -174,9 +356,18 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
                         properties: {
                           id: { type: 'integer' },
                           userId: { type: 'integer' },
-                          agentId: { type: 'integer' },
+                          mainAgent: { type: ['integer', 'null'] },
+                          agentIds: {
+                            type: 'array',
+                            items: { type: 'integer' },
+                            nullable: true
+                          },
                           title: { type: ['string', 'null'] },
                           metadata: {},
+                          provider: { type: ['string', 'null'] },
+                          model: { type: ['string', 'null'] },
+                          temperature: { type: ['number', 'null'] },
+                          maxTokens: { type: ['integer', 'null'] },
                           createdAt: { type: ['string', 'null'], format: 'date-time' },
                           updatedAt: { type: ['string', 'null'], format: 'date-time' }
                         }
@@ -208,20 +399,76 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
 
       try {
         const rows = await fastify.mysql.query(
-          'SELECT id, creator_id, agent_id, title, metadata, created_at, updated_at FROM conversation WHERE creator_id = ? ORDER BY created_at DESC',
+          'SELECT id, creator_id, title, metadata, provider, model, temperature, max_tokens, main_agent_id, created_at, updated_at FROM conversation WHERE creator_id = ? ORDER BY created_at DESC',
           [normalizedUserId]
         );
 
+        let agentLinksMap = new Map();
+        if (Array.isArray(rows) && rows.length > 0) {
+          const conversationIds = rows.map((row) => Number(row.id));
+          const placeholders = conversationIds.map(() => '?').join(', ');
+
+          if (placeholders.length > 0) {
+            const agentLinkRows = await fastify.mysql.query(
+              `SELECT conversation_id, agent_id FROM agent_conversation WHERE conversation_id IN (${placeholders}) ORDER BY conversation_id, agent_id`,
+              conversationIds
+            );
+
+            if (Array.isArray(agentLinkRows)) {
+              for (const link of agentLinkRows) {
+                const conversationId = Number(link.conversation_id);
+                const agentIdValue = Number(link.agent_id);
+                if (!agentLinksMap.has(conversationId)) {
+                  agentLinksMap.set(conversationId, []);
+                }
+                agentLinksMap.get(conversationId).push(agentIdValue);
+              }
+            }
+          }
+        }
+
         const conversations = Array.isArray(rows)
-          ? rows.map((row) => ({
-              id: row.id,
-              userId: row.creator_id,
-              agentId: row.agent_id,
-              title: row.title || null,
-              metadata: parseJsonColumn(row.metadata),
-              createdAt: normalizeDate(row.created_at),
-              updatedAt: normalizeDate(row.updated_at)
-            }))
+          ? rows.map((row) => {
+              const conversationId = Number(row.id);
+              const linkedAgents = agentLinksMap.get(conversationId) || [];
+              const mainAgentId =
+                row.main_agent_id === undefined || row.main_agent_id === null
+                  ? null
+                  : Number(row.main_agent_id);
+
+              const normalizedAgentIdsForConversation = [];
+
+              if (mainAgentId !== null) {
+                normalizedAgentIdsForConversation.push(mainAgentId);
+              }
+
+              for (const agentIdValue of linkedAgents) {
+                if (agentIdValue !== mainAgentId) {
+                  normalizedAgentIdsForConversation.push(agentIdValue);
+                }
+              }
+
+              const mainAgentResponse = mainAgentId;
+
+              return {
+                id: conversationId,
+                userId: Number(row.creator_id),
+                mainAgent: mainAgentResponse,
+                agentIds: normalizedAgentIdsForConversation,
+                title: row.title || null,
+                metadata: parseJsonColumn(row.metadata),
+                provider: row.provider || null,
+                model: row.model || null,
+                temperature:
+                  row.temperature === undefined || row.temperature === null
+                    ? null
+                    : Number(row.temperature),
+                maxTokens:
+                  row.max_tokens === undefined || row.max_tokens === null ? null : Number(row.max_tokens),
+                createdAt: normalizeDate(row.created_at),
+                updatedAt: normalizeDate(row.updated_at)
+              };
+            })
           : [];
 
         return reply.sendSuccess({ conversations });
@@ -282,6 +529,7 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
       }
 
       try {
+        await fastify.mysql.query('DELETE FROM agent_conversation WHERE conversation_id = ?', [normalizedId]);
         const result = await fastify.mysql.query('DELETE FROM conversation WHERE id = ?', [normalizedId]);
         const affected = result && typeof result.affectedRows === 'number' ? result.affectedRows : 0;
 
