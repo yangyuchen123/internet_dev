@@ -59,8 +59,39 @@ const normalizeDate = (value) => {
   return String(value);
 };
 
+const ensureStringContent = (value) => {
+  if (typeof value === 'string' && value.trim().length > 0) {
+    return value;
+  }
+
+  try {
+    return JSON.stringify(value ?? {});
+  } catch (_error) {
+    return '{}';
+  }
+};
+
+const serializeMetadata = (value) => {
+  if (value === undefined || value === null) {
+    return null;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? null : trimmed;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch (_error) {
+    return null;
+  }
+};
+
 module.exports = {
   ensureJson,
   parseJsonColumn,
-  normalizeDate
+  normalizeDate,
+  ensureStringContent,
+  serializeMetadata
 };

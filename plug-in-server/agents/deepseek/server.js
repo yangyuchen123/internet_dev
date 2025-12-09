@@ -91,13 +91,29 @@ const chatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string().min(1, 'content must be a non-empty string'),
   name: z.string().min(1).optional(),
-  toolCallId: z.string().min(1).optional()
+  tool_call_id: z.string().min(1).optional(),
+  to: z.string().min(1).optional(),
+  tool_calls: z
+    .array(
+      z.object({
+        id: z.string().min(1).optional(),
+        type: z.literal('function'),
+        function: z
+          .object({
+            name: z.string().min(1),
+            arguments: z.string().min(1)
+          })
+          .strict()
+      }).strict()
+    )
+    .min(1)
+    .optional()
 }).superRefine((value, ctx) => {
-  if (value.role === 'tool' && !value.toolCallId) {
+  if (value.role === 'tool' && !value.tool_call_id) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ['toolCallId'],
-      message: 'toolCallId is required when role is "tool"'
+      path: ['tool_call_id'],
+      message: 'tool_call_id is required when role is "tool"'
     });
   }
 });
@@ -125,8 +141,44 @@ const mapMessageToOpenAI = (message) => {
     mapped.name = message.name;
   }
 
-  if (message.toolCallId) {
-    mapped.tool_call_id = message.toolCallId;
+  if (message.tool_call_id) {
+    mapped.tool_call_id = message.tool_call_id;
+  }
+
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+    mapped.tool_calls = message.tool_calls
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+
+        const functionPayload = entry.function;
+
+        if (!functionPayload || typeof functionPayload !== 'object') {
+          return null;
+        }
+
+        const name = typeof functionPayload.name === 'string' ? functionPayload.name.trim() : '';
+        const args = typeof functionPayload.arguments === 'string' ? functionPayload.arguments : '';
+
+        if (!name) {
+          return null;
+        }
+
+        return {
+          id: typeof entry.id === 'string' && entry.id.trim().length > 0 ? entry.id.trim() : undefined,
+          type: 'function',
+          function: {
+            name,
+            arguments: args && args.trim().length > 0 ? args.trim() : '{}'
+          }
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    if (mapped.tool_calls.length === 0) {
+      delete mapped.tool_calls;
+    }
   }
 
   return mapped;
@@ -212,6 +264,7 @@ const registerDeepseekTool = (mcpServer, context, log) => {
       inputSchema: chatInputSchema
     },
     async (args) => {
+      // log.info({ args }, 'Deepseek chat server start  1');
       if (!context.client) {
         return mcpServer.createToolError('Deepseek API client is not configured. Set the API key and restart the server.');
       }
@@ -226,7 +279,7 @@ const registerDeepseekTool = (mcpServer, context, log) => {
       if (allowedModels && !allowedModels.has(resolvedModel)) {
         return mcpServer.createToolError(`Model "${resolvedModel}" is not allowed. Allowed models: ${[...allowedModels].join(', ')}`);
       }
-
+      // log.info({ args }, 'Deepseek chat server start  2');
       const payload = {
         model: resolvedModel,
         messages: args.messages.map(mapMessageToOpenAI)
@@ -265,6 +318,7 @@ const registerDeepseekTool = (mcpServer, context, log) => {
       }
 
       try {
+        // log.info({ payload }, 'Deepseek chat completion request');
         const response = await context.client.chat.completions.create(payload);
         const firstChoice = response?.choices?.[0];
 
@@ -274,7 +328,7 @@ const registerDeepseekTool = (mcpServer, context, log) => {
 
         const message = firstChoice.message;
         const text = coerceMessageContent(message);
-        const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+        const toolCallList = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
 
         const content = [];
 
@@ -285,14 +339,14 @@ const registerDeepseekTool = (mcpServer, context, log) => {
           });
         }
 
-        const normalizedToolCalls = [];
+        const normalizedToolCallList = [];
 
-        for (const toolCall of toolCalls) {
-          if (!toolCall || typeof toolCall !== 'object') {
+        for (const toolCallEntry of toolCallList) {
+          if (!toolCallEntry || typeof toolCallEntry !== 'object') {
             continue;
           }
 
-          const functionPayload = toolCall.function || {};
+          const functionPayload = toolCallEntry.function || {};
           const callName = typeof functionPayload.name === 'string' ? functionPayload.name.trim() : null;
 
           if (!callName) {
@@ -309,8 +363,8 @@ const registerDeepseekTool = (mcpServer, context, log) => {
             }
           }
 
-          normalizedToolCalls.push({
-            id: typeof toolCall.id === 'string' ? toolCall.id : null,
+          normalizedToolCallList.push({
+            id: typeof toolCallEntry.id === 'string' ? toolCallEntry.id : null,
             name: callName,
             arguments: typeof serializedArgs === 'string' ? serializedArgs : null
           });
@@ -331,7 +385,7 @@ const registerDeepseekTool = (mcpServer, context, log) => {
             finishReason: firstChoice.finish_reason,
             usage: response?.usage,
             id: response?.id,
-            toolCalls: normalizedToolCalls,
+            tool_calls: normalizedToolCallList,
             role: message?.role || null
           }
         };
