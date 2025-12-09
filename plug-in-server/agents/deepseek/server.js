@@ -110,7 +110,9 @@ const chatInputSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   stop: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
   frequencyPenalty: z.number().min(-2).max(2).optional(),
-  presencePenalty: z.number().min(-2).max(2).optional()
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  tools: z.array(z.any()).optional(),
+  toolChoice: z.union([z.string(), z.object({}).passthrough()]).optional()
 });
 
 const mapMessageToOpenAI = (message) => {
@@ -254,6 +256,14 @@ const registerDeepseekTool = (mcpServer, context, log) => {
         payload.stop = args.stop;
       }
 
+      if (Array.isArray(args.tools) && args.tools.length > 0) {
+        payload.tools = args.tools;
+      }
+
+      if (args.toolChoice !== undefined) {
+        payload.tool_choice = args.toolChoice;
+      }
+
       try {
         const response = await context.client.chat.completions.create(payload);
         const firstChoice = response?.choices?.[0];
@@ -262,21 +272,67 @@ const registerDeepseekTool = (mcpServer, context, log) => {
           return mcpServer.createToolError('Deepseek did not return any completion choices.');
         }
 
-        const text = coerceMessageContent(firstChoice.message);
+        const message = firstChoice.message;
+        const text = coerceMessageContent(message);
+        const toolCalls = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+
+        const content = [];
+
+        if (typeof text === 'string' && text.trim().length > 0) {
+          content.push({
+            type: 'text',
+            text
+          });
+        }
+
+        const normalizedToolCalls = [];
+
+        for (const toolCall of toolCalls) {
+          if (!toolCall || typeof toolCall !== 'object') {
+            continue;
+          }
+
+          const functionPayload = toolCall.function || {};
+          const callName = typeof functionPayload.name === 'string' ? functionPayload.name.trim() : null;
+
+          if (!callName) {
+            continue;
+          }
+
+          let serializedArgs = functionPayload.arguments;
+
+          if (serializedArgs && typeof serializedArgs !== 'string') {
+            try {
+              serializedArgs = JSON.stringify(serializedArgs);
+            } catch (_error) {
+              serializedArgs = null;
+            }
+          }
+
+          normalizedToolCalls.push({
+            id: typeof toolCall.id === 'string' ? toolCall.id : null,
+            name: callName,
+            arguments: typeof serializedArgs === 'string' ? serializedArgs : null
+          });
+        }
+
+        if (content.length === 0) {
+          content.push({
+            type: 'text',
+            text: ''
+          });
+        }
 
         return {
-          content: [
-            {
-              type: 'text',
-              text
-            }
-          ],
+          content,
           metadata: {
             model: response?.model || resolvedModel,
             choiceIndex: firstChoice.index,
             finishReason: firstChoice.finish_reason,
             usage: response?.usage,
-            id: response?.id
+            id: response?.id,
+            toolCalls: normalizedToolCalls,
+            role: message?.role || null
           }
         };
       } catch (error) {

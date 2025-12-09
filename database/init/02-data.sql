@@ -8,8 +8,8 @@ INSERT INTO `user` (`id`, `username`, `password`, `nickname`, `email`, `phone`, 
 
 -- 插入测试Agent
 INSERT INTO `agent` (`id`, `name`, `description`, `avatar`, `category`, `url`, `connect_type`, `is_tested`, `is_public`, `created_at`, `updated_at`) VALUES
-(1, 'test_agent1', 'This is test_agent1\'s description', 'https://example.com/avatar.jpg', 'test_agent1_category', 'https://agent.example.com/a1', 'stream-http', 1, 1, '2025-11-20 15:45:52', '2025-11-20 18:30:59'),
-(2, 'test_agent2', 'This is test_agent2\'s description', 'https://example.com/avatar.jpg', 'test_agent2_category', 'https://agent.example.com/a2', 'sse', 0, 1, '2025-11-20 15:48:03', '2025-11-20 15:48:03');
+(1, 'deepseek-chat', '本工具用于实现用户聊天，调用deepseek-chat模型', 'https://example.com/avatar.jpg', 'chat-model', 'localhost:3100/mcp', 'stream-http', 1, 1, '2025-11-20 15:45:52', '2025-11-20 18:30:59'),
+(2, '12306-MCP', '12306火车订票助手', 'https://example.com/avatar.jpg', 'tool', 'https://mcp.api-inference.modelscope.net/9f3ca4667bca41/mcp', 'stream-http', 1, 1, '2025-11-20 15:48:03', '2025-11-20 15:48:03');
 
 INSERT INTO `user_agent` (`id`, `user_id`, `agent_id`, `is_owner`, `created_at`, `updated_at`) VALUES
 (1, 2, 1, 1, '2025-11-20 15:45:52', '2025-11-20 18:30:59'),
