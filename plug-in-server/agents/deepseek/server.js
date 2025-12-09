@@ -182,13 +182,28 @@ const extractErrorMessage = (error) => {
   return 'Deepseek chat completion failed';
 };
 
+const isInitializationPayload = (payload) => {
+  const isInitializeRequest = (message) =>
+    Boolean(
+      message &&
+        typeof message === 'object' &&
+        message.method === 'initialize'
+    );
+
+  if (Array.isArray(payload)) {
+    return payload.some(isInitializeRequest);
+  }
+
+  return isInitializeRequest(payload);
+};
+
 const registerDeepseekTool = (mcpServer, context, log) => {
   const allowedModels = Array.isArray(context.availableModels) && context.availableModels.length > 0
     ? new Set(context.availableModels)
     : null;
 
   mcpServer.registerTool(
-    'deepseek.chat',
+    'chat',
     {
       title: 'Deepseek Chat Completion',
       description: 'Generate responses using Deepseek chat completion models.',
@@ -296,23 +311,55 @@ const buildDeepseekServer = ({ fastifyOptions } = {}) => {
   const clientContext = buildDeepseekClientContext(providerConfig, app.log);
 
   const mcpServer = new McpServer(SERVER_INFO);
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-    enableJsonResponse: true
-  });
 
-  transport.onerror = (error) => {
-    app.log.error({ err: error }, 'Deepseek MCP transport error');
+  let hasActiveSession = false;
+  let shuttingDown = false;
+  let resettingTransportPromise = null;
+
+  const createTransport = () => {
+    const transportInstance = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      enableJsonResponse: true,
+      onsessioninitialized: () => {
+        hasActiveSession = true;
+      },
+      onsessionclosed: () => {
+        hasActiveSession = false;
+      }
+    });
+
+    transportInstance.onerror = (error) => {
+      app.log.error({ err: error }, 'Deepseek MCP transport error');
+    };
+
+    const previousOnClose = transportInstance.onclose;
+    transportInstance.onclose = (...args) => {
+      hasActiveSession = false;
+      if (typeof previousOnClose === 'function') {
+        previousOnClose(...args);
+      }
+    };
+
+    return transportInstance;
   };
+
+  let transport = createTransport();
 
   registerDeepseekTool(mcpServer, clientContext, app.log);
 
-  const connectPromise = mcpServer
-    .connect(transport)
-    .catch((error) => {
-      app.log.error({ err: error }, 'Deepseek MCP server failed to connect');
-      throw error;
-    });
+  mcpServer.server.oninitialized = () => {
+    hasActiveSession = true;
+  };
+
+  const connectToTransport = (targetTransport) =>
+    mcpServer
+      .connect(targetTransport)
+      .catch((error) => {
+        app.log.error({ err: error }, 'Deepseek MCP server failed to connect');
+        throw error;
+      });
+
+  let connectPromise = connectToTransport(transport);
 
   if (!app.hasDecorator('deepseekMcp')) {
     app.decorate('deepseekMcp', {});
@@ -323,13 +370,78 @@ const buildDeepseekServer = ({ fastifyOptions } = {}) => {
   app.deepseekMcp.connectPromise = connectPromise;
   app.deepseekMcp.clientContext = clientContext;
 
+  const resetConnectionForNewSession = async () => {
+    if (shuttingDown) {
+      return connectPromise;
+    }
+
+    if (resettingTransportPromise) {
+      await resettingTransportPromise;
+      return connectPromise;
+    }
+
+    app.log.info('Resetting Deepseek MCP session for new initialization request');
+
+    resettingTransportPromise = (async () => {
+      hasActiveSession = false;
+
+      try {
+        await connectPromise.catch(() => {});
+      } catch (_error) {
+        // connect promise already logged; continue with reset
+      }
+
+      try {
+        await mcpServer.close();
+      } catch (error) {
+        app.log.warn({ err: error }, 'Deepseek MCP server close before reinitialization failed');
+      }
+
+      const previousTransport = transport;
+
+      if (previousTransport) {
+        try {
+          await previousTransport.close();
+        } catch (error) {
+          app.log.warn({ err: error }, 'Deepseek MCP transport close before reinitialization failed');
+        }
+      }
+
+      transport = createTransport();
+      const newConnectPromise = connectToTransport(transport);
+
+      connectPromise = newConnectPromise;
+      app.deepseekMcp.transport = transport;
+      app.deepseekMcp.connectPromise = newConnectPromise;
+
+      await newConnectPromise;
+    })();
+
+    try {
+      await resettingTransportPromise;
+    } finally {
+      resettingTransportPromise = null;
+    }
+
+    return connectPromise;
+  };
+
   app.get('/health', async () => ({ status: 'ok' }));
 
   const handleMcpRequest = async (request, reply) => {
     reply.hijack();
 
     try {
-      await transport.handleRequest(request.raw, reply.raw, request.body);
+      const payload = request.body;
+      const isInitializationRequest = request.method === 'POST' && isInitializationPayload(payload);
+
+      if (isInitializationRequest && hasActiveSession && !shuttingDown) {
+        await resetConnectionForNewSession();
+      } else {
+        await connectPromise;
+      }
+
+      await transport.handleRequest(request.raw, reply.raw, payload);
     } catch (error) {
       app.log.error({ err: error }, 'Failed to handle MCP request');
       if (!reply.raw.headersSent) {
@@ -360,11 +472,23 @@ const buildDeepseekServer = ({ fastifyOptions } = {}) => {
   });
 
   app.addHook('onClose', async () => {
+    shuttingDown = true;
+
+    if (resettingTransportPromise) {
+      await resettingTransportPromise.catch(() => {});
+    }
+
     try {
       await connectPromise.catch(() => {});
       await mcpServer.close();
     } catch (error) {
       app.log.error({ err: error }, 'Failed to close Deepseek MCP server cleanly');
+    }
+
+    try {
+      await transport.close();
+    } catch (error) {
+      app.log.warn({ err: error }, 'Failed to close Deepseek MCP transport cleanly');
     }
   });
 

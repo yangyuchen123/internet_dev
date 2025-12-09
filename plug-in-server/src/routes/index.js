@@ -1,6 +1,6 @@
 const rootRoute = require('./root');
 const messageRoute = require('./chat');
-const mcpRoute = require('./mcp');
+const mcpClientRoute = require('./mcpClient');
 const conversationRoute = require('./conversation');
 const agentRoute = require('./agent');
 
@@ -21,10 +21,10 @@ const registerRoutes = async (fastify) => {
     swaggerTags: ['agents'],
     summary: 'Manage agents'
   });
-  await fastify.register(mcpRoute, {
-    routePath: '/mcp',
-    swaggerTags: ['mcp'],
-    summary: 'Proxy MCP operations to a remote server'
+  await fastify.register(mcpClientRoute, {
+    routePath: '/mcp-client',
+    swaggerTags: ['mcp-client'],
+    summary: 'Manage persistent MCP client sessions'
   });
 };
 
