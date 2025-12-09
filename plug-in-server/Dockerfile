@@ -13,6 +13,8 @@ ENV NODE_ENV=production
 
 WORKDIR /app
 
+RUN apk add --no-cache curl
+
 COPY --from=deps /app/node_modules ./node_modules
 
 COPY . .
