@@ -4,6 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { McpServer } = require('@modelcontextprotocol/sdk/server/mcp.js');
 const { StreamableHTTPServerTransport } = require('@modelcontextprotocol/sdk/server/streamableHttp.js');
 const { fetch } = require('undici');
+const { z } = require('zod/v3');
 
 const DEFAULT_BODY_LIMIT = 4 * 1024 * 1024;
 const DEFAULT_TIMEOUT_MS = 10000;
@@ -195,6 +196,25 @@ const compactMetadata = (metadata) => Object.entries(metadata).reduce((acc, [key
   return acc;
 }, {});
 
+const formatZodError = (error) =>
+  error.errors
+    .map(({ path, message }) => {
+      const prefix = Array.isArray(path) && path.length > 0 ? `${path.join('.')}: ` : '';
+      return `${prefix}${message}`;
+    })
+    .join('; ');
+
+const validateArguments = (schema, rawArgs) => {
+  const normalized = normalizeArguments(rawArgs);
+  const result = schema.safeParse(normalized);
+
+  if (!result.success) {
+    return { error: formatZodError(result.error) };
+  }
+
+  return { data: result.data };
+};
+
 const callSensorEndpoint = async (context, options = {}) => {
   const method = typeof options.method === 'string' ? options.method.toUpperCase() : 'GET';
   const path = typeof options.path === 'string' ? options.path : '/';
@@ -304,42 +324,33 @@ const callSensorEndpoint = async (context, options = {}) => {
   };
 };
 
-const getSensorDataSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['sensor'],
-  properties: {
-    sensor: { type: 'string', minLength: 1 },
-    uuid: { type: 'string', minLength: 1 },
-    device_uuid: { type: 'string', minLength: 1 }
-  }
-};
+const getSensorDataSchema = z
+  .object({
+    sensor: z.string().min(1, 'sensor is required'),
+    uuid: z.string().min(1).optional(),
+    device_uuid: z.string().min(1).optional()
+  })
+  .strict();
 
-const controlDeviceSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['port_type', 'port_id', 'action'],
-  properties: {
-    device_uuid: { type: 'string', minLength: 1 },
-    uuid: { type: 'string', minLength: 1 },
-    port_type: { type: 'string', enum: ['led', 'relay', 'servo', 'pwm'] },
-    port_id: { type: 'integer', minimum: 1, maximum: 4 },
-    action: { type: 'string', enum: ['on', 'off', 'set'] },
-    value: { type: 'number' }
-  }
-};
+const controlDeviceSchema = z
+  .object({
+    device_uuid: z.string().min(1).optional(),
+    uuid: z.string().min(1).optional(),
+    port_type: z.enum(['led', 'relay', 'servo', 'pwm']),
+    port_id: z.number().int().min(1).max(4),
+    action: z.enum(['on', 'off', 'set']),
+    value: z.number().optional()
+  })
+  .strict();
 
-const executePresetSchema = {
-  type: 'object',
-  additionalProperties: false,
-  required: ['preset_name'],
-  properties: {
-    device_uuid: { type: 'string', minLength: 1 },
-    uuid: { type: 'string', minLength: 1 },
-    preset_name: { type: 'string', minLength: 1 },
-    parameters: { type: 'object', additionalProperties: true }
-  }
-};
+const executePresetSchema = z
+  .object({
+    device_uuid: z.string().min(1).optional(),
+    uuid: z.string().min(1).optional(),
+    preset_name: z.string().min(1, 'preset_name is required'),
+    parameters: z.record(z.any()).optional()
+  })
+  .strict();
 
 const buildToolSuccess = (response) => ({
   content: [
@@ -365,13 +376,14 @@ const registerSensorTools = (mcpServer, context, log) => {
       inputSchema: getSensorDataSchema
     },
     async (rawArgs) => {
-      const args = normalizeArguments(rawArgs);
-      const sensorType = selectFirstString(args.sensor);
+      const validation = validateArguments(getSensorDataSchema, rawArgs);
 
-      if (!sensorType) {
-        return mcpServer.createToolError('sensor is required');
+      if (validation.error) {
+        return mcpServer.createToolError(validation.error);
       }
 
+      const args = validation.data;
+      const sensorType = args.sensor;
       const uuid = selectFirstString(args.uuid, args.device_uuid, context.defaultUuid);
 
       if (!uuid) {
@@ -404,20 +416,23 @@ const registerSensorTools = (mcpServer, context, log) => {
       inputSchema: controlDeviceSchema
     },
     async (rawArgs) => {
-      const args = normalizeArguments(rawArgs);
+      const validation = validateArguments(controlDeviceSchema, rawArgs);
 
-      const portType = selectFirstString(args.port_type);
-      if (!portType || !ALLOWED_PORT_TYPES.has(portType)) {
+      if (validation.error) {
+        return mcpServer.createToolError(validation.error);
+      }
+
+      const args = validation.data;
+
+      const portType = args.port_type;
+      if (!ALLOWED_PORT_TYPES.has(portType)) {
         return mcpServer.createToolError('port_type must be one of led, relay, servo, pwm');
       }
 
-      const portId = Number(args.port_id);
-      if (!Number.isInteger(portId) || portId < 1 || portId > 4) {
-        return mcpServer.createToolError('port_id must be an integer between 1 and 4');
-      }
+      const portId = args.port_id;
 
-      const action = selectFirstString(args.action);
-      if (!action || !ALLOWED_ACTIONS.has(action)) {
+      const action = args.action;
+      if (!ALLOWED_ACTIONS.has(action)) {
         return mcpServer.createToolError('action must be one of on, off, set');
       }
 
@@ -429,16 +444,15 @@ const registerSensorTools = (mcpServer, context, log) => {
       let value;
 
       if (action === 'set') {
-        const valueCandidate = Number(args.value);
-        if (!Number.isFinite(valueCandidate)) {
+        if (!Number.isFinite(args.value)) {
           return mcpServer.createToolError('value must be provided as a number when action is set');
         }
 
-        if (valueCandidate < 0 || valueCandidate > 180) {
+        if (args.value < 0 || args.value > 180) {
           return mcpServer.createToolError('value must be between 0 and 180 when action is set');
         }
 
-        value = valueCandidate;
+        value = args.value;
       }
 
       const body = {
@@ -475,24 +489,22 @@ const registerSensorTools = (mcpServer, context, log) => {
       inputSchema: executePresetSchema
     },
     async (rawArgs) => {
-      const args = normalizeArguments(rawArgs);
+      const validation = validateArguments(executePresetSchema, rawArgs);
 
-      const presetName = selectFirstString(args.preset_name);
-      if (!presetName) {
-        return mcpServer.createToolError('preset_name is required');
+      if (validation.error) {
+        return mcpServer.createToolError(validation.error);
       }
+
+      const args = validation.data;
+
+      const presetName = args.preset_name;
 
       const deviceUuid = selectFirstString(args.device_uuid, args.uuid, context.defaultUuid);
       if (!deviceUuid) {
         return mcpServer.createToolError('device_uuid is required');
       }
 
-      let parameters = args.parameters;
-      if (parameters === undefined || parameters === null) {
-        parameters = {};
-      } else if (typeof parameters !== 'object' || Array.isArray(parameters)) {
-        return mcpServer.createToolError('parameters must be an object when provided');
-      }
+      const parameters = args.parameters && typeof args.parameters === 'object' ? args.parameters : {};
 
       try {
         const response = await callSensorEndpoint(context, {
