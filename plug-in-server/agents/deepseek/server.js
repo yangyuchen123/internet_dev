@@ -91,13 +91,29 @@ const chatMessageSchema = z.object({
   role: z.enum(['system', 'user', 'assistant', 'tool']),
   content: z.string().min(1, 'content must be a non-empty string'),
   name: z.string().min(1).optional(),
-  toolCallId: z.string().min(1).optional()
+  tool_call_id: z.string().min(1).optional(),
+  to: z.string().min(1).optional(),
+  tool_calls: z
+    .array(
+      z.object({
+        id: z.string().min(1).optional(),
+        type: z.literal('function'),
+        function: z
+          .object({
+            name: z.string().min(1),
+            arguments: z.string().min(1)
+          })
+          .strict()
+      }).strict()
+    )
+    .min(1)
+    .optional()
 }).superRefine((value, ctx) => {
-  if (value.role === 'tool' && !value.toolCallId) {
+  if (value.role === 'tool' && !value.tool_call_id) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ['toolCallId'],
-      message: 'toolCallId is required when role is "tool"'
+      path: ['tool_call_id'],
+      message: 'tool_call_id is required when role is "tool"'
     });
   }
 });
@@ -110,7 +126,9 @@ const chatInputSchema = z.object({
   maxTokens: z.number().int().positive().optional(),
   stop: z.union([z.string().min(1), z.array(z.string().min(1))]).optional(),
   frequencyPenalty: z.number().min(-2).max(2).optional(),
-  presencePenalty: z.number().min(-2).max(2).optional()
+  presencePenalty: z.number().min(-2).max(2).optional(),
+  tools: z.array(z.any()).optional(),
+  toolChoice: z.union([z.string(), z.object({}).passthrough()]).optional()
 });
 
 const mapMessageToOpenAI = (message) => {
@@ -123,8 +141,44 @@ const mapMessageToOpenAI = (message) => {
     mapped.name = message.name;
   }
 
-  if (message.toolCallId) {
-    mapped.tool_call_id = message.toolCallId;
+  if (message.tool_call_id) {
+    mapped.tool_call_id = message.tool_call_id;
+  }
+
+  if (Array.isArray(message.tool_calls) && message.tool_calls.length > 0) {
+    mapped.tool_calls = message.tool_calls
+      .map((entry) => {
+        if (!entry || typeof entry !== 'object') {
+          return null;
+        }
+
+        const functionPayload = entry.function;
+
+        if (!functionPayload || typeof functionPayload !== 'object') {
+          return null;
+        }
+
+        const name = typeof functionPayload.name === 'string' ? functionPayload.name.trim() : '';
+        const args = typeof functionPayload.arguments === 'string' ? functionPayload.arguments : '';
+
+        if (!name) {
+          return null;
+        }
+
+        return {
+          id: typeof entry.id === 'string' && entry.id.trim().length > 0 ? entry.id.trim() : undefined,
+          type: 'function',
+          function: {
+            name,
+            arguments: args && args.trim().length > 0 ? args.trim() : '{}'
+          }
+        };
+      })
+      .filter((entry) => entry !== null);
+
+    if (mapped.tool_calls.length === 0) {
+      delete mapped.tool_calls;
+    }
   }
 
   return mapped;
@@ -182,19 +236,35 @@ const extractErrorMessage = (error) => {
   return 'Deepseek chat completion failed';
 };
 
+const isInitializationPayload = (payload) => {
+  const isInitializeRequest = (message) =>
+    Boolean(
+      message &&
+        typeof message === 'object' &&
+        message.method === 'initialize'
+    );
+
+  if (Array.isArray(payload)) {
+    return payload.some(isInitializeRequest);
+  }
+
+  return isInitializeRequest(payload);
+};
+
 const registerDeepseekTool = (mcpServer, context, log) => {
   const allowedModels = Array.isArray(context.availableModels) && context.availableModels.length > 0
     ? new Set(context.availableModels)
     : null;
 
   mcpServer.registerTool(
-    'deepseek.chat',
+    'chat',
     {
       title: 'Deepseek Chat Completion',
       description: 'Generate responses using Deepseek chat completion models.',
       inputSchema: chatInputSchema
     },
     async (args) => {
+      // log.info({ args }, 'Deepseek chat server start  1');
       if (!context.client) {
         return mcpServer.createToolError('Deepseek API client is not configured. Set the API key and restart the server.');
       }
@@ -209,7 +279,7 @@ const registerDeepseekTool = (mcpServer, context, log) => {
       if (allowedModels && !allowedModels.has(resolvedModel)) {
         return mcpServer.createToolError(`Model "${resolvedModel}" is not allowed. Allowed models: ${[...allowedModels].join(', ')}`);
       }
-
+      // log.info({ args }, 'Deepseek chat server start  2');
       const payload = {
         model: resolvedModel,
         messages: args.messages.map(mapMessageToOpenAI)
@@ -239,7 +309,16 @@ const registerDeepseekTool = (mcpServer, context, log) => {
         payload.stop = args.stop;
       }
 
+      if (Array.isArray(args.tools) && args.tools.length > 0) {
+        payload.tools = args.tools;
+      }
+
+      if (args.toolChoice !== undefined) {
+        payload.tool_choice = args.toolChoice;
+      }
+
       try {
+        // log.info({ payload }, 'Deepseek chat completion request');
         const response = await context.client.chat.completions.create(payload);
         const firstChoice = response?.choices?.[0];
 
@@ -247,21 +326,67 @@ const registerDeepseekTool = (mcpServer, context, log) => {
           return mcpServer.createToolError('Deepseek did not return any completion choices.');
         }
 
-        const text = coerceMessageContent(firstChoice.message);
+        const message = firstChoice.message;
+        const text = coerceMessageContent(message);
+        const toolCallList = Array.isArray(message?.tool_calls) ? message.tool_calls : [];
+
+        const content = [];
+
+        if (typeof text === 'string' && text.trim().length > 0) {
+          content.push({
+            type: 'text',
+            text
+          });
+        }
+
+        const normalizedToolCallList = [];
+
+        for (const toolCallEntry of toolCallList) {
+          if (!toolCallEntry || typeof toolCallEntry !== 'object') {
+            continue;
+          }
+
+          const functionPayload = toolCallEntry.function || {};
+          const callName = typeof functionPayload.name === 'string' ? functionPayload.name.trim() : null;
+
+          if (!callName) {
+            continue;
+          }
+
+          let serializedArgs = functionPayload.arguments;
+
+          if (serializedArgs && typeof serializedArgs !== 'string') {
+            try {
+              serializedArgs = JSON.stringify(serializedArgs);
+            } catch (_error) {
+              serializedArgs = null;
+            }
+          }
+
+          normalizedToolCallList.push({
+            id: typeof toolCallEntry.id === 'string' ? toolCallEntry.id : null,
+            name: callName,
+            arguments: typeof serializedArgs === 'string' ? serializedArgs : null
+          });
+        }
+
+        if (content.length === 0) {
+          content.push({
+            type: 'text',
+            text: ''
+          });
+        }
 
         return {
-          content: [
-            {
-              type: 'text',
-              text
-            }
-          ],
+          content,
           metadata: {
             model: response?.model || resolvedModel,
             choiceIndex: firstChoice.index,
             finishReason: firstChoice.finish_reason,
             usage: response?.usage,
-            id: response?.id
+            id: response?.id,
+            tool_calls: normalizedToolCallList,
+            role: message?.role || null
           }
         };
       } catch (error) {
@@ -296,23 +421,55 @@ const buildDeepseekServer = ({ fastifyOptions } = {}) => {
   const clientContext = buildDeepseekClientContext(providerConfig, app.log);
 
   const mcpServer = new McpServer(SERVER_INFO);
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => randomUUID(),
-    enableJsonResponse: true
-  });
 
-  transport.onerror = (error) => {
-    app.log.error({ err: error }, 'Deepseek MCP transport error');
+  let hasActiveSession = false;
+  let shuttingDown = false;
+  let resettingTransportPromise = null;
+
+  const createTransport = () => {
+    const transportInstance = new StreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      enableJsonResponse: true,
+      onsessioninitialized: () => {
+        hasActiveSession = true;
+      },
+      onsessionclosed: () => {
+        hasActiveSession = false;
+      }
+    });
+
+    transportInstance.onerror = (error) => {
+      app.log.error({ err: error }, 'Deepseek MCP transport error');
+    };
+
+    const previousOnClose = transportInstance.onclose;
+    transportInstance.onclose = (...args) => {
+      hasActiveSession = false;
+      if (typeof previousOnClose === 'function') {
+        previousOnClose(...args);
+      }
+    };
+
+    return transportInstance;
   };
+
+  let transport = createTransport();
 
   registerDeepseekTool(mcpServer, clientContext, app.log);
 
-  const connectPromise = mcpServer
-    .connect(transport)
-    .catch((error) => {
-      app.log.error({ err: error }, 'Deepseek MCP server failed to connect');
-      throw error;
-    });
+  mcpServer.server.oninitialized = () => {
+    hasActiveSession = true;
+  };
+
+  const connectToTransport = (targetTransport) =>
+    mcpServer
+      .connect(targetTransport)
+      .catch((error) => {
+        app.log.error({ err: error }, 'Deepseek MCP server failed to connect');
+        throw error;
+      });
+
+  let connectPromise = connectToTransport(transport);
 
   if (!app.hasDecorator('deepseekMcp')) {
     app.decorate('deepseekMcp', {});
@@ -323,13 +480,78 @@ const buildDeepseekServer = ({ fastifyOptions } = {}) => {
   app.deepseekMcp.connectPromise = connectPromise;
   app.deepseekMcp.clientContext = clientContext;
 
+  const resetConnectionForNewSession = async () => {
+    if (shuttingDown) {
+      return connectPromise;
+    }
+
+    if (resettingTransportPromise) {
+      await resettingTransportPromise;
+      return connectPromise;
+    }
+
+    app.log.info('Resetting Deepseek MCP session for new initialization request');
+
+    resettingTransportPromise = (async () => {
+      hasActiveSession = false;
+
+      try {
+        await connectPromise.catch(() => {});
+      } catch (_error) {
+        // connect promise already logged; continue with reset
+      }
+
+      try {
+        await mcpServer.close();
+      } catch (error) {
+        app.log.warn({ err: error }, 'Deepseek MCP server close before reinitialization failed');
+      }
+
+      const previousTransport = transport;
+
+      if (previousTransport) {
+        try {
+          await previousTransport.close();
+        } catch (error) {
+          app.log.warn({ err: error }, 'Deepseek MCP transport close before reinitialization failed');
+        }
+      }
+
+      transport = createTransport();
+      const newConnectPromise = connectToTransport(transport);
+
+      connectPromise = newConnectPromise;
+      app.deepseekMcp.transport = transport;
+      app.deepseekMcp.connectPromise = newConnectPromise;
+
+      await newConnectPromise;
+    })();
+
+    try {
+      await resettingTransportPromise;
+    } finally {
+      resettingTransportPromise = null;
+    }
+
+    return connectPromise;
+  };
+
   app.get('/health', async () => ({ status: 'ok' }));
 
   const handleMcpRequest = async (request, reply) => {
     reply.hijack();
 
     try {
-      await transport.handleRequest(request.raw, reply.raw, request.body);
+      const payload = request.body;
+      const isInitializationRequest = request.method === 'POST' && isInitializationPayload(payload);
+
+      if (isInitializationRequest && hasActiveSession && !shuttingDown) {
+        await resetConnectionForNewSession();
+      } else {
+        await connectPromise;
+      }
+
+      await transport.handleRequest(request.raw, reply.raw, payload);
     } catch (error) {
       app.log.error({ err: error }, 'Failed to handle MCP request');
       if (!reply.raw.headersSent) {
@@ -360,11 +582,23 @@ const buildDeepseekServer = ({ fastifyOptions } = {}) => {
   });
 
   app.addHook('onClose', async () => {
+    shuttingDown = true;
+
+    if (resettingTransportPromise) {
+      await resettingTransportPromise.catch(() => {});
+    }
+
     try {
       await connectPromise.catch(() => {});
       await mcpServer.close();
     } catch (error) {
       app.log.error({ err: error }, 'Failed to close Deepseek MCP server cleanly');
+    }
+
+    try {
+      await transport.close();
+    } catch (error) {
+      app.log.warn({ err: error }, 'Failed to close Deepseek MCP transport cleanly');
     }
   });
 

@@ -4,12 +4,14 @@ const { buildServer } = require('./src/buildServer');
 const { loadConfig } = require('./src/config');
 const { verifyTable } = require('./src/startup/verifyTable');
 const { startDeepseekServer } = require('./agents/deepseek/server');
+const { startSensorServer } = require('./agents/sensor/server');
 
 const start = async () => {
   const app = buildServer();
   const config = loadConfig();
-  const { port, host, deepseekServer } = config;
+  const { port, host, deepseekServer, sensorServer } = config;
   let deepseekApp;
+  let sensorApp;
 
   try {
     await app.ready();
@@ -18,6 +20,13 @@ const start = async () => {
       deepseekApp = await startDeepseekServer({
         host: deepseekServer.host,
         port: deepseekServer.port
+      });
+    }
+
+    if (sensorServer?.enabled) {
+        sensorApp = await startSensorServer({
+        host: sensorServer.host,
+        port: sensorServer.port
       });
     }
 
@@ -41,6 +50,15 @@ const start = async () => {
         }
       }
 
+
+      if (sensorApp) {
+        try {
+          await sensorApp.close();
+        } catch (sensorCloseError) {
+          app.log.error(sensorCloseError, 'Failed to close sensor server');
+        }
+      }
+
       process.exit(0);
     };
 
@@ -55,6 +73,14 @@ const start = async () => {
         await deepseekApp.close();
       } catch (deepseekCloseError) {
         app.log.error(deepseekCloseError, 'Failed to close deepseek server after startup failure');
+      }
+    }
+
+    if (sensorApp) {
+      try {
+        await sensorApp.close();
+      } catch (sensorCloseError) {
+        app.log.error(sensorCloseError, 'Failed to close sensor server after startup failure');
       }
     }
 

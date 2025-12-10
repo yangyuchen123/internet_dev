@@ -1,4 +1,6 @@
 const { ensureJson, parseJsonColumn, normalizeDate } = require('../utils/serialization');
+const { ensurePositiveInteger } = require('../utils/validation');
+const { ensureMysqlReady } = require('../utils/mysql');
 module.exports = async function conversationRoute(fastify, opts = {}) {
   const basePath = typeof opts.routePath === 'string' ? opts.routePath : '/conversation';
   const swaggerTags = Array.isArray(opts.swaggerTags) ? opts.swaggerTags : ['conversation'];
@@ -102,8 +104,8 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
         return reply.sendError('userId is required', 400);
       }
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
       const normalizedAgentIds = [];
@@ -327,6 +329,434 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
   });
 
   fastify.route({
+    method: 'PUT',
+    url: `${basePath}/update`,
+    schema: {
+      tags: swaggerTags,
+      summary: 'Update a conversation',
+      body: {
+        type: 'object',
+        required: ['conversationId', 'userId'],
+        properties: {
+          conversationId: { type: 'integer', minimum: 1 },
+          agentIds: {
+            type: 'array',
+            nullable: true,
+            minItems: 1,
+            items: { type: 'integer', minimum: 1 }
+          },
+          mainAgent: { type: 'integer', minimum: 1, nullable: true },
+          userId: { type: 'integer', minimum: 1 },
+          title: { type: 'string', maxLength: 255, nullable: true },
+          metadata: { type: 'object', nullable: true, additionalProperties: true },
+          messages: {
+            type: 'array',
+            nullable: true,
+            minItems: 1,
+            items: {
+              type: 'object',
+              required: ['role', 'content'],
+              properties: {
+                role: { type: 'string' },
+                content: { type: 'string' }
+              }
+            }
+          },
+          provider: { type: 'string', nullable: true },
+          model: { type: 'string', minLength: 1 },
+          temperature: { type: 'number', minimum: 0, maximum: 2, nullable: true },
+          maxTokens: { type: 'integer', minimum: 1, nullable: true }
+        }
+      },
+      response: {
+        200: {
+          allOf: [
+            { $ref: 'ResponseBase#' },
+            {
+              type: 'object',
+              properties: {
+                data: {
+                  type: 'object',
+                  properties: {
+                    conversation: {
+                      type: 'object',
+                      properties: {
+                        id: { type: 'integer' },
+                        userId: { type: 'integer' },
+                        mainAgent: { type: ['integer', 'null'] },
+                        agentIds: {
+                          type: 'array',
+                          items: { type: 'integer' },
+                          nullable: true
+                        },
+                        title: { type: ['string', 'null'] },
+                        metadata: {},
+                        provider: { type: ['string', 'null'] },
+                        model: { type: ['string', 'null'] },
+                        temperature: { type: ['number', 'null'] },
+                        maxTokens: { type: ['integer', 'null'] },
+                        createdAt: { type: ['string', 'null'], format: 'date-time' },
+                        updatedAt: { type: ['string', 'null'], format: 'date-time' }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        400: { $ref: 'ResponseBase#' },
+        403: { $ref: 'ResponseBase#' },
+        404: { $ref: 'ResponseBase#' },
+        503: { $ref: 'ResponseBase#' }
+      }
+    },
+    handler: async (request, reply) => {
+      const body = request.body || {};
+      const {
+        conversationId,
+        agentIds,
+        mainAgent,
+        userId,
+        title,
+        metadata,
+        messages,
+        provider,
+        model,
+        temperature,
+        maxTokens
+      } = body;
+
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
+      }
+
+      let normalizedConversationId;
+      let normalizedUserId;
+
+      try {
+        normalizedConversationId = ensurePositiveInteger(conversationId, 'conversationId');
+        normalizedUserId = ensurePositiveInteger(userId, 'userId');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid payload';
+        return reply.sendError(message, 400);
+      }
+
+      let existingRows;
+      try {
+        existingRows = await fastify.mysql.query(
+          'SELECT id, creator_id, title, metadata, provider, model, temperature, max_tokens, main_agent_id, created_at, updated_at FROM conversation WHERE id = ? LIMIT 1',
+          [normalizedConversationId]
+        );
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to load conversation before update');
+        return reply.sendError('Failed to update conversation', 500);
+      }
+
+      if (!Array.isArray(existingRows) || existingRows.length === 0) {
+        return reply.sendError('Conversation not found', 404);
+      }
+
+      const existingRow = existingRows[0];
+      const existingMainAgent =
+        existingRow.main_agent_id === undefined || existingRow.main_agent_id === null
+          ? null
+          : Number(existingRow.main_agent_id);
+
+      if (Number(existingRow.creator_id) !== normalizedUserId) {
+        return reply.sendError('User does not own the conversation', 403);
+      }
+
+      const hasMainAgent = Object.prototype.hasOwnProperty.call(body, 'mainAgent');
+      let normalizedMainAgent = existingMainAgent;
+      if (hasMainAgent) {
+        if (mainAgent === undefined || mainAgent === null) {
+          normalizedMainAgent = null;
+        } else {
+          const parsedMainAgent = Number(mainAgent);
+          if (!Number.isInteger(parsedMainAgent) || parsedMainAgent <= 0) {
+            return reply.sendError('mainAgent must be a positive integer when provided', 400);
+          }
+          normalizedMainAgent = parsedMainAgent;
+        }
+      }
+
+      const hasTitle = Object.prototype.hasOwnProperty.call(body, 'title');
+      let normalizedTitle;
+      if (hasTitle) {
+        normalizedTitle = typeof title === 'string' && title.trim().length > 0 ? title.trim() : null;
+      }
+
+      const hasProvider = Object.prototype.hasOwnProperty.call(body, 'provider');
+      let normalizedProvider;
+      if (hasProvider) {
+        if (provider === undefined || provider === null) {
+          normalizedProvider = null;
+        } else if (typeof provider !== 'string') {
+          return reply.sendError('provider must be a string', 400);
+        } else {
+          const trimmedProvider = provider.trim();
+          normalizedProvider = trimmedProvider.length > 0 ? trimmedProvider : null;
+        }
+      }
+
+      const hasModel = Object.prototype.hasOwnProperty.call(body, 'model');
+      let normalizedModel;
+      if (hasModel) {
+        if (model === undefined || model === null) {
+          return reply.sendError('model must be a non-empty string when provided', 400);
+        }
+        if (typeof model !== 'string') {
+          return reply.sendError('model must be a string', 400);
+        }
+        const trimmedModel = model.trim();
+        if (trimmedModel.length === 0) {
+          return reply.sendError('model must be a non-empty string when provided', 400);
+        }
+        normalizedModel = trimmedModel;
+      }
+
+      const hasMetadata = Object.prototype.hasOwnProperty.call(body, 'metadata');
+      const hasMessages = Object.prototype.hasOwnProperty.call(body, 'messages');
+      let metadataPayload = metadata;
+
+      if (!hasMetadata && hasMessages) {
+        metadataPayload = { messages };
+      }
+
+      let metadataJson;
+      if (metadataPayload !== undefined) {
+        try {
+          metadataJson = ensureJson(metadataPayload, 'metadata');
+        } catch (error) {
+          return reply.sendError(error.message, 400);
+        }
+      }
+
+      const hasTemperature = Object.prototype.hasOwnProperty.call(body, 'temperature');
+      let normalizedTemperature;
+      if (hasTemperature) {
+        if (temperature === undefined || temperature === null) {
+          normalizedTemperature = null;
+        } else {
+          const parsedTemperature = Number(temperature);
+          if (Number.isNaN(parsedTemperature)) {
+            return reply.sendError('temperature must be a number', 400);
+          }
+          if (parsedTemperature < 0 || parsedTemperature > 2) {
+            return reply.sendError('temperature must be between 0 and 2', 400);
+          }
+          normalizedTemperature = Number(parsedTemperature.toFixed(2));
+        }
+      }
+
+      const hasMaxTokens = Object.prototype.hasOwnProperty.call(body, 'maxTokens');
+      let normalizedMaxTokens;
+      if (hasMaxTokens) {
+        if (maxTokens === undefined || maxTokens === null) {
+          normalizedMaxTokens = null;
+        } else {
+          const parsedMaxTokens = Number(maxTokens);
+          if (!Number.isInteger(parsedMaxTokens) || parsedMaxTokens <= 0) {
+            return reply.sendError('maxTokens must be a positive integer', 400);
+          }
+          normalizedMaxTokens = parsedMaxTokens;
+        }
+      }
+
+      const hasAgentIds = Object.prototype.hasOwnProperty.call(body, 'agentIds');
+      let normalizedAgentIds = null;
+      if (hasAgentIds && agentIds !== undefined && agentIds !== null) {
+        if (!Array.isArray(agentIds)) {
+          return reply.sendError('agentIds must be an array when provided', 400);
+        }
+        if (agentIds.length === 0) {
+          return reply.sendError('agentIds must contain at least one entry when provided', 400);
+        }
+
+        const agentIdSet = new Set();
+        normalizedAgentIds = [];
+        for (const value of agentIds) {
+          const parsedAgentId = Number(value);
+          if (!Number.isInteger(parsedAgentId) || parsedAgentId <= 0) {
+            return reply.sendError('agentIds must contain positive integers', 400);
+          }
+          if (!agentIdSet.has(parsedAgentId)) {
+            agentIdSet.add(parsedAgentId);
+            normalizedAgentIds.push(parsedAgentId);
+          }
+        }
+      }
+
+      const shouldUpdateAgentLinks = Array.isArray(normalizedAgentIds);
+      if (shouldUpdateAgentLinks && normalizedMainAgent !== null && !normalizedAgentIds.includes(normalizedMainAgent)) {
+        normalizedAgentIds.push(normalizedMainAgent);
+      }
+      if (shouldUpdateAgentLinks) {
+        normalizedAgentIds.sort((a, b) => a - b);
+      }
+
+      const updateFields = [];
+      const updateParams = [];
+
+      if (hasMainAgent) {
+        updateFields.push('main_agent_id = ?');
+        updateParams.push(normalizedMainAgent);
+      }
+      if (hasTitle) {
+        updateFields.push('title = ?');
+        updateParams.push(normalizedTitle);
+      }
+      if (metadataPayload !== undefined) {
+        updateFields.push('metadata = ?');
+        updateParams.push(metadataJson);
+      }
+      if (hasProvider) {
+        updateFields.push('provider = ?');
+        updateParams.push(normalizedProvider);
+      }
+      if (hasModel) {
+        updateFields.push('model = ?');
+        updateParams.push(normalizedModel);
+      }
+      if (hasTemperature) {
+        updateFields.push('temperature = ?');
+        updateParams.push(normalizedTemperature);
+      }
+      if (hasMaxTokens) {
+        updateFields.push('max_tokens = ?');
+        updateParams.push(normalizedMaxTokens);
+      }
+
+      if (updateFields.length === 0 && !shouldUpdateAgentLinks) {
+        return reply.sendError('No fields provided to update', 400);
+      }
+
+      try {
+        if (updateFields.length > 0) {
+          updateFields.push('updated_at = CURRENT_TIMESTAMP');
+          const updateSql = `UPDATE conversation SET ${updateFields.join(', ')} WHERE id = ?`;
+          updateParams.push(normalizedConversationId);
+          await fastify.mysql.query(updateSql, updateParams);
+        }
+
+        if (shouldUpdateAgentLinks) {
+          const agentLinkRows = await fastify.mysql.query(
+            'SELECT agent_id FROM agent_conversation WHERE conversation_id = ?',
+            [normalizedConversationId]
+          );
+
+          const existingAgentIds = Array.isArray(agentLinkRows)
+            ? agentLinkRows.map((row) => Number(row.agent_id))
+            : [];
+
+          const existingSet = new Set(existingAgentIds);
+          const targetSet = new Set(normalizedAgentIds);
+
+          const agentsToRemove = existingAgentIds.filter((id) => !targetSet.has(id));
+          if (agentsToRemove.length > 0) {
+            const placeholders = agentsToRemove.map(() => '?').join(', ');
+            await fastify.mysql.query(
+              `DELETE FROM agent_conversation WHERE conversation_id = ? AND agent_id IN (${placeholders})`,
+              [normalizedConversationId, ...agentsToRemove]
+            );
+          }
+
+          const agentsToAdd = Array.from(targetSet).filter((id) => !existingSet.has(id));
+          for (const agentIdValue of agentsToAdd) {
+            await fastify.mysql.query(
+              'INSERT INTO agent_conversation (agent_id, conversation_id) VALUES (?, ?)',
+              [agentIdValue, normalizedConversationId]
+            );
+          }
+        } else if (hasMainAgent && normalizedMainAgent !== null) {
+          await fastify.mysql.query(
+            'INSERT INTO agent_conversation (agent_id, conversation_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE agent_id = agent_id',
+            [normalizedMainAgent, normalizedConversationId]
+          );
+        }
+
+        const updatedRows = await fastify.mysql.query(
+          'SELECT id, creator_id, title, metadata, provider, model, temperature, max_tokens, main_agent_id, created_at, updated_at FROM conversation WHERE id = ? LIMIT 1',
+          [normalizedConversationId]
+        );
+
+        if (!Array.isArray(updatedRows) || updatedRows.length === 0) {
+          return reply.sendError('Failed to load updated conversation', 500);
+        }
+
+        const updatedRow = updatedRows[0];
+
+        let linkedAgentIds = [];
+        const refreshedAgentLinks = await fastify.mysql.query(
+          'SELECT agent_id FROM agent_conversation WHERE conversation_id = ? ORDER BY agent_id ASC',
+          [normalizedConversationId]
+        );
+
+        if (Array.isArray(refreshedAgentLinks) && refreshedAgentLinks.length > 0) {
+          linkedAgentIds = refreshedAgentLinks.map((link) => Number(link.agent_id));
+        }
+
+        const mainAgentIdResponse =
+          updatedRow.main_agent_id === undefined || updatedRow.main_agent_id === null
+            ? null
+            : Number(updatedRow.main_agent_id);
+
+        if (mainAgentIdResponse !== null) {
+          linkedAgentIds = [
+            mainAgentIdResponse,
+            ...linkedAgentIds.filter((id) => id !== mainAgentIdResponse)
+          ];
+        }
+
+        return reply.sendSuccess(
+          {
+            conversation: {
+              id: Number(updatedRow.id),
+              userId: Number(updatedRow.creator_id),
+              mainAgent: mainAgentIdResponse,
+              agentIds: linkedAgentIds,
+              title: updatedRow.title || null,
+              metadata: parseJsonColumn(updatedRow.metadata),
+              provider: updatedRow.provider || null,
+              model: updatedRow.model || null,
+              temperature:
+                updatedRow.temperature === undefined || updatedRow.temperature === null
+                  ? null
+                  : Number(updatedRow.temperature),
+              maxTokens:
+                updatedRow.max_tokens === undefined || updatedRow.max_tokens === null
+                  ? null
+                  : Number(updatedRow.max_tokens),
+              createdAt: normalizeDate(updatedRow.created_at),
+              updatedAt: normalizeDate(updatedRow.updated_at)
+            }
+          },
+          200
+        );
+      } catch (error) {
+        fastify.log.error({ err: error }, 'Failed to update conversation');
+
+        if (error && error.code === 'ER_NO_REFERENCED_ROW_2') {
+          const message = typeof error.sqlMessage === 'string' ? error.sqlMessage : '';
+          if (message.includes('agent_id')) {
+            return reply.sendError('Agent does not exist', 404);
+          }
+          if (message.includes('main_agent_id')) {
+            return reply.sendError('Agent does not exist', 404);
+          }
+          if (message.includes('creator_id')) {
+            return reply.sendError('User does not exist', 404);
+          }
+          return reply.sendError('Related record does not exist', 404);
+        }
+
+        return reply.sendError('Failed to update conversation', 500);
+      }
+    }
+  });
+
+  fastify.route({
     method: 'GET',
     url: `${basePath}/list`,
     schema: {
@@ -387,8 +817,8 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
     handler: async (request, reply) => {
       const { userId } = request.query || {};
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
       const normalizedUserId = Number(userId);
@@ -487,10 +917,12 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
       summary: 'Delete a conversation',
       querystring: {
         type: 'object',
-        required: ['conversationId'],
+        required: ['conversationId', 'userId'],
         properties: {
-          conversationId: { type: 'integer', minimum: 1 }
-        }
+          conversationId: { type: 'integer', minimum: 1 },
+          userId: { type: 'integer', minimum: 1 }
+        },
+        additionalProperties: false
       },
       response: {
         200: {
@@ -511,21 +943,46 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
           ]
         },
         400: { $ref: 'ResponseBase#' },
+        403: { $ref: 'ResponseBase#' },
         404: { $ref: 'ResponseBase#' },
         503: { $ref: 'ResponseBase#' }
       }
     },
     handler: async (request, reply) => {
-      const { conversationId } = request.query || {};
+      const { conversationId: rawConversationId, userId: rawUserId } = request.query || {};
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
-      const normalizedId = Number(conversationId);
+      let normalizedId;
+      let normalizedUserId;
 
-      if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
-        return reply.sendError('conversationId must be a positive integer', 400);
+      try {
+        normalizedId = ensurePositiveInteger(rawConversationId, 'conversationId');
+        normalizedUserId = ensurePositiveInteger(rawUserId, 'userId');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid payload';
+        return reply.sendError(message, 400);
+      }
+
+      let existingRows;
+      try {
+        existingRows = await fastify.mysql.query(
+          'SELECT id, creator_id FROM conversation WHERE id = ? LIMIT 1',
+          [normalizedId]
+        );
+      } catch (error) {
+        fastify.log.error({ err: error, conversationId: normalizedId }, 'Failed to load conversation before delete');
+        return reply.sendError('Failed to delete conversation', 500);
+      }
+
+      if (!Array.isArray(existingRows) || existingRows.length === 0) {
+        return reply.sendError('Conversation not found', 404);
+      }
+
+      if (Number(existingRows[0].creator_id) !== normalizedUserId) {
+        return reply.sendError('User does not own the conversation', 403);
       }
 
       try {
@@ -539,7 +996,7 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
 
         return reply.sendSuccess({ id: normalizedId, deleted: true });
       } catch (error) {
-        fastify.log.error({ err: error }, 'Failed to delete conversation');
+        fastify.log.error({ err: error, conversationId: normalizedId, userId: normalizedUserId }, 'Failed to delete conversation');
         return reply.sendError('Failed to delete conversation', 500);
       }
     }

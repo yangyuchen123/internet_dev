@@ -22,6 +22,11 @@ LABEL maintainer="ai-agent-platform-backend"
 
 WORKDIR /app
 
+# Install curl for container health checks
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
+
 COPY --from=builder /workspace/target/project-*.jar /app/app.jar
 
 # 设置时区

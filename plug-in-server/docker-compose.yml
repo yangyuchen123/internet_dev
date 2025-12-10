@@ -35,8 +35,10 @@ services:
       sh -c "npm install && npm run dev"
 
     depends_on:
-      - backend-dev  # 等待后端服务启动（不要求健康检查）
-      - mysql-dev
+      backend-dev:  # 等待容器启动即可，无需健康检查
+        condition: service_started
+      mysql-dev:
+        condition: service_healthy
     networks:
       - shared-network  # 加入与 db 相同的共享网络
 
