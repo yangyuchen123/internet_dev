@@ -1,4 +1,6 @@
 const { ensureJson, parseJsonColumn, normalizeDate } = require('../utils/serialization');
+const { ensurePositiveInteger } = require('../utils/validation');
+const { ensureMysqlReady } = require('../utils/mysql');
 module.exports = async function conversationRoute(fastify, opts = {}) {
   const basePath = typeof opts.routePath === 'string' ? opts.routePath : '/conversation';
   const swaggerTags = Array.isArray(opts.swaggerTags) ? opts.swaggerTags : ['conversation'];
@@ -102,8 +104,8 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
         return reply.sendError('userId is required', 400);
       }
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
       const normalizedAgentIds = [];
@@ -425,20 +427,19 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
         maxTokens
       } = body;
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
-      const normalizedConversationId = Number(conversationId);
+      let normalizedConversationId;
+      let normalizedUserId;
 
-      if (!Number.isInteger(normalizedConversationId) || normalizedConversationId <= 0) {
-        return reply.sendError('conversationId must be a positive integer', 400);
-      }
-
-      const normalizedUserId = Number(userId);
-
-      if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
-        return reply.sendError('userId must be a positive integer', 400);
+      try {
+        normalizedConversationId = ensurePositiveInteger(conversationId, 'conversationId');
+        normalizedUserId = ensurePositiveInteger(userId, 'userId');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid payload';
+        return reply.sendError(message, 400);
       }
 
       let existingRows;
@@ -816,8 +817,8 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
     handler: async (request, reply) => {
       const { userId } = request.query || {};
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
       const normalizedUserId = Number(userId);
@@ -950,20 +951,19 @@ module.exports = async function conversationRoute(fastify, opts = {}) {
     handler: async (request, reply) => {
       const { conversationId: rawConversationId, userId: rawUserId } = request.query || {};
 
-      if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-        return reply.sendError('Database is not configured', 503);
+      if (!ensureMysqlReady(fastify, reply)) {
+        return;
       }
 
-      const normalizedId = Number(rawConversationId);
+      let normalizedId;
+      let normalizedUserId;
 
-      if (!Number.isInteger(normalizedId) || normalizedId <= 0) {
-        return reply.sendError('conversationId must be a positive integer', 400);
-      }
-
-      const normalizedUserId = Number(rawUserId);
-
-      if (!Number.isInteger(normalizedUserId) || normalizedUserId <= 0) {
-        return reply.sendError('userId must be a positive integer', 400);
+      try {
+        normalizedId = ensurePositiveInteger(rawConversationId, 'conversationId');
+        normalizedUserId = ensurePositiveInteger(rawUserId, 'userId');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Invalid payload';
+        return reply.sendError(message, 400);
       }
 
       let existingRows;

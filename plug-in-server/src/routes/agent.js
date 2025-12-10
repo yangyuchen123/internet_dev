@@ -1,140 +1,9 @@
-const { normalizeDate } = require('../utils/serialization');
+const { requireTrimmedString, optionalTrimmedString, parseBooleanFlag } = require('../utils/parsing');
+const { ensurePositiveInteger } = require('../utils/validation');
+const { ensureMysqlReady } = require('../utils/mysql');
+const { fetchAgent, fetchAgentWithOwnership, mapAgentRow } = require('../utils/agentStore');
 
 const ALLOWED_CONNECT_TYPES = new Set(['stream-http', 'sse']);
-
-const ensureMysqlReady = (fastify, reply) => {
-  if (!fastify.mysql || typeof fastify.mysql.query !== 'function') {
-    reply.sendError('Database is not configured', 503);
-    return false;
-  }
-
-  return true;
-};
-
-const requireTrimmedString = (value, fieldName, maxLength) => {
-  if (typeof value !== 'string') {
-    throw new Error(`${fieldName} must be a string`);
-  }
-
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    throw new Error(`${fieldName} is required`);
-  }
-
-  if (maxLength && trimmed.length > maxLength) {
-    throw new Error(`${fieldName} must be at most ${maxLength} characters`);
-  }
-
-  return trimmed;
-};
-
-const optionalTrimmedString = (value, fieldName, maxLength) => {
-  if (value === undefined || value === null) {
-    return null;
-  }
-
-  if (typeof value !== 'string') {
-    throw new Error(`${fieldName} must be a string`);
-  }
-
-  const trimmed = value.trim();
-
-  if (maxLength && trimmed.length > maxLength) {
-    throw new Error(`${fieldName} must be at most ${maxLength} characters`);
-  }
-
-  return trimmed.length === 0 ? null : trimmed;
-};
-
-const parseBooleanFlag = (value, fieldName, defaultValue = false) => {
-  if (value === undefined || value === null) {
-    return defaultValue;
-  }
-
-  if (typeof value === 'boolean') {
-    return value;
-  }
-
-  if (typeof value === 'number') {
-    if (value === 0) {
-      return false;
-    }
-    if (value === 1) {
-      return true;
-    }
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim().toLowerCase();
-    if (['true', '1', 'yes', 'y'].includes(normalized)) {
-      return true;
-    }
-    if (['false', '0', 'no', 'n'].includes(normalized)) {
-      return false;
-    }
-  }
-
-  throw new Error(`${fieldName} must be a boolean value`);
-};
-
-const parsePositiveInteger = (value, fieldName) => {
-  if (value === undefined || value === null) {
-    throw new Error(`${fieldName} is required`);
-  }
-
-  const parsed = Number(value);
-
-  if (!Number.isInteger(parsed) || parsed <= 0) {
-    throw new Error(`${fieldName} must be a positive integer`);
-  }
-
-  return parsed;
-};
-
-const mapAgentRow = (row) => ({
-  id: Number(row.id),
-  name: row.name,
-  description: row.description ?? null,
-  avatar: row.avatar ?? null,
-  category: row.category,
-  url: row.url ?? null,
-  connectType: row.connect_type,
-  isTested: Number(row.is_tested) === 1,
-  isPublic: Number(row.is_public) === 1,
-  createdAt: normalizeDate(row.created_at),
-  updatedAt: normalizeDate(row.updated_at)
-});
-
-const fetchAgent = async (fastify, agentId) => {
-  const rows = await fastify.mysql.query(
-    'SELECT id, name, description, avatar, category, url, connect_type, is_tested, is_public, created_at, updated_at FROM agent WHERE id = ? LIMIT 1',
-    [agentId]
-  );
-
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return null;
-  }
-
-  return mapAgentRow(rows[0]);
-};
-
-const fetchAgentWithOwnership = async (fastify, agentId, userId) => {
-  const rows = await fastify.mysql.query(
-    'SELECT a.id, a.name, a.description, a.avatar, a.category, a.url, a.connect_type, a.is_tested, a.is_public, a.created_at, a.updated_at, ua.is_owner FROM agent a LEFT JOIN user_agent ua ON ua.agent_id = a.id AND ua.user_id = ? WHERE a.id = ? LIMIT 1',
-    [userId, agentId]
-  );
-
-  if (!Array.isArray(rows) || rows.length === 0) {
-    return { agent: null, isOwner: false };
-  }
-
-  const row = rows[0];
-  return {
-    agent: mapAgentRow(row),
-    isOwner: Number(row.is_owner) === 1
-  };
-};
 
 module.exports = async function agentRoute(fastify, opts = {}) {
   const basePath = typeof opts.routePath === 'string' ? opts.routePath : '/agent';
@@ -249,7 +118,7 @@ module.exports = async function agentRoute(fastify, opts = {}) {
 
         normalizedIsTested = parseBooleanFlag(isTested, 'isTested', false);
         normalizedIsPublic = parseBooleanFlag(isPublic, 'isPublic', false);
-        normalizedUserId = parsePositiveInteger(userId, 'userId');
+        normalizedUserId = ensurePositiveInteger(userId, 'userId');
       } catch (validationError) {
         const message = validationError instanceof Error ? validationError.message : 'Invalid payload';
         return reply.sendError(message, 400);
@@ -363,8 +232,8 @@ module.exports = async function agentRoute(fastify, opts = {}) {
       let userId;
 
       try {
-        agentId = parsePositiveInteger(rawAgentId, 'agentId');
-        userId = parsePositiveInteger(rawUserId, 'userId');
+        agentId = ensurePositiveInteger(rawAgentId, 'agentId');
+        userId = ensurePositiveInteger(rawUserId, 'userId');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Invalid agentId';
         return reply.sendError(message, 400);
@@ -460,8 +329,8 @@ module.exports = async function agentRoute(fastify, opts = {}) {
       let normalizedIsTested = true;
 
       try {
-        agentId = parsePositiveInteger(rawAgentId, 'agentId');
-        userId = parsePositiveInteger(rawUserId, 'userId');
+        agentId = ensurePositiveInteger(rawAgentId, 'agentId');
+        userId = ensurePositiveInteger(rawUserId, 'userId');
         normalizedIsTested = parseBooleanFlag(isTested, 'isTested', true);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Invalid payload';
@@ -562,8 +431,8 @@ module.exports = async function agentRoute(fastify, opts = {}) {
       let normalizedIsPublic = true;
 
       try {
-        agentId = parsePositiveInteger(rawAgentId, 'agentId');
-        userId = parsePositiveInteger(rawUserId, 'userId');
+        agentId = ensurePositiveInteger(rawAgentId, 'agentId');
+        userId = ensurePositiveInteger(rawUserId, 'userId');
         normalizedIsPublic = parseBooleanFlag(isPublic, 'isPublic', true);
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Invalid payload';
@@ -663,8 +532,8 @@ module.exports = async function agentRoute(fastify, opts = {}) {
       let userId;
 
       try {
-        agentId = parsePositiveInteger(rawAgentId, 'agentId');
-        userId = parsePositiveInteger(rawUserId, 'userId');
+        agentId = ensurePositiveInteger(rawAgentId, 'agentId');
+        userId = ensurePositiveInteger(rawUserId, 'userId');
 
         if (note !== undefined && note !== null && typeof note !== 'string') {
           throw new Error('note must be a string when provided');
@@ -763,8 +632,8 @@ module.exports = async function agentRoute(fastify, opts = {}) {
       let userId;
 
       try {
-        agentId = parsePositiveInteger(rawAgentId, 'agentId');
-        userId = parsePositiveInteger(rawUserId, 'userId');
+        agentId = ensurePositiveInteger(rawAgentId, 'agentId');
+        userId = ensurePositiveInteger(rawUserId, 'userId');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Invalid payload';
         return reply.sendError(message, 400);
@@ -924,7 +793,7 @@ module.exports = async function agentRoute(fastify, opts = {}) {
       let userId;
 
       try {
-        userId = parsePositiveInteger(request.query?.userId, 'userId');
+        userId = ensurePositiveInteger(request.query?.userId, 'userId');
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Invalid userId';
         return reply.sendError(message, 400);
