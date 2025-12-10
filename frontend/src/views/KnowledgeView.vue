@@ -27,12 +27,7 @@
                 <span class="menu-text">主页</span>
               </router-link>
             </li>
-            <li class="menu-item">
-              <router-link to="/plugins" class="menu-link" active-class="active">
-                <span class="menu-icon">🔌</span>
-                <span class="menu-text">插件</span>
-              </router-link>
-            </li>
+
             <li class="menu-item">
               <router-link to="/workflow" class="menu-link" active-class="active">
                 <span class="menu-icon">🔄</span>

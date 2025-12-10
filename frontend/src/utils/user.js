@@ -68,6 +68,7 @@ export async function fetchAPI(endpoint, options = {}) {
   // 增加调试日志
   console.log('[fetchAPI 调试] URL:', url)
   console.log('[fetchAPI 调试] Headers:', headers)
+  console.log('[fetchAPI 调试] Body:', options.body)
   
   try {
     const response = await fetch(url, config)
@@ -157,8 +158,16 @@ export async function put(endpoint, data = {}) {
 /**
  * DELETE请求
  */
-export async function del(endpoint) {
-  return fetchAPI(endpoint, {
+export async function del(endpoint, params = {}) {
+  // 构建查询字符串
+  const queryString = Object.keys(params)
+    .map(key => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+    .join('&')
+
+  const separator = endpoint.includes('?') ? '&' : '?'
+  const url = queryString ? `${endpoint}${separator}${queryString}` : endpoint
+
+  return fetchAPI(url, {
     method: 'DELETE'
   })
 }

@@ -27,12 +27,7 @@
                 <span class="menu-text">主页</span>
               </router-link>
             </li>
-            <li class="menu-item">
-              <router-link to="/plugins" class="menu-link" active-class="active">
-                <span class="menu-icon">🔌</span>
-                <span class="menu-text">插件</span>
-              </router-link>
-            </li>
+
             <li class="menu-item">
               <router-link to="/workflow" class="menu-link" active-class="active">
                 <span class="menu-icon">🔄</span>
@@ -43,6 +38,12 @@
               <router-link to="/knowledge" class="menu-link" active-class="active">
                 <span class="menu-icon">📚</span>
                 <span class="menu-text">知识库</span>
+              </router-link>
+            </li>
+            <li class="menu-item">
+              <router-link to="/conversation" class="menu-link" active-class="active">
+                <span class="menu-icon">💬</span>
+                <span class="menu-text">会话管理</span>
               </router-link>
             </li>
           </ul>
@@ -194,7 +195,7 @@ export default {
         return
       }
       try {
-        const response = await api.agent.getAgentList()
+        const response = await api.agent.getUserAgentList(this.user.id)
         // API返回格式: { agents: [...], pagination: {...} }
         this.agents = response.agents || []
       } catch (error) {

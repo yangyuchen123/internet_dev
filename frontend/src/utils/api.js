@@ -1,17 +1,15 @@
 // 从各个模块导入API
 import { authAPI, getAccessToken, setAccessToken, removeAccessToken, saveUserInfo, getUserInfo, removeUserInfo } from './user.js'
 import { agentAPI } from './agent.js'
-import { conversationAPI } from './conversation.js'
-import { pluginAPI } from './plugin.js'
 import { knowledgeAPI } from './knowledge.js'
+import { conversationAPI } from './conversation.js'
 
 // 创建默认导出对象，保持向后兼容
 const api = {
   auth: authAPI,
   agent: agentAPI,
-  conversation: conversationAPI,
-  plugin: pluginAPI,
   knowledge: knowledgeAPI,
+  conversation: conversationAPI,
   getAccessToken,
   setAccessToken,
   removeAccessToken,
@@ -37,12 +35,9 @@ export {
   // 智能体相关
   agentAPI,
   
-  // 会话相关
-  conversationAPI,
-  
-  // 插件相关
-  pluginAPI,
-  
   // 知识库相关
-  knowledgeAPI
+  knowledgeAPI,
+  
+  // 会话相关
+  conversationAPI
 }

@@ -5,9 +5,9 @@ import HomeView from '../views/HomeView.vue'
 import AgentsView from '../views/AgentsView.vue'
 import AgentCreationView from '../views/AgentCreationView.vue'
 import AgentEditView from '../views/AgentEditView.vue'
-import PluginsView from '../views/PluginsView.vue'
 import WorkflowView from '../views/WorkflowView.vue'
 import KnowledgeView from '../views/KnowledgeView.vue'
+import ConversationView from '../views/ConversationView.vue'
 
 const routes = [
   {
@@ -38,14 +38,7 @@ const routes = [
       requiresAuth: true // 需要登录才能访问
     }
   },
-  {
-    path: '/plugins',
-    name: 'Plugins',
-    component: PluginsView,
-    meta: {
-      requiresAuth: true
-    }
-  },
+
   {
     path: '/workflow',
     name: 'Workflow',
@@ -82,6 +75,14 @@ const routes = [
     path: '/agents/:id/edit',
     name: 'AgentEdit',
     component: AgentEditView,
+    meta: {
+      requiresAuth: true // 需要登录才能访问
+    }
+  },
+  {
+    path: '/conversation',
+    name: 'Conversation',
+    component: ConversationView,
     meta: {
       requiresAuth: true // 需要登录才能访问
     }
