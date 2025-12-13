@@ -1,23 +1,26 @@
 <template>
   <div class="home-container">
-    <!-- 导航栏 -->
+    <!-- 导航栏 (保持与知识库页面一致) -->
     <header class="navbar">
       <div class="navbar-brand">
+        <div class="logo-icon">🤖</div>
         <h1 class="brand-name">智能体管理系统</h1>
       </div>
 
       <div class="navbar-user">
         <div class="user-info">
+          <!-- 生成用户头像首字母 -->
+          <span class="avatar">{{ user?.nickname?.[0] || user?.username?.[0] || 'U' }}</span>
           <span class="username">{{ user?.nickname || user?.username || '用户' }}</span>
         </div>
-        <button class="btn-logout" @click="handleLogout">
-          <span>退出登录</span>
+        <button class="btn-logout" @click="handleLogout" title="退出登录">
+          <span class="icon">⏻</span>
         </button>
       </div>
     </header>
 
     <div class="main-content">
-      <!-- 左侧菜单栏 -->
+      <!-- 左侧菜单栏 (保持与知识库页面一致) -->
       <aside class="sidebar">
         <nav class="menu">
           <ul class="menu-list">
@@ -52,53 +55,68 @@
 
       <!-- 主页内容 -->
       <main class="content">
-        <div class="welcome-section">
-          <h2>欢迎回来，{{ user?.nickname || user?.username || '用户' }}！</h2>
-          <p class="welcome-message">这是智能体管理系统的首页。</p>
-        </div>
-
-        <!-- 智能体列表 -->
-        <div class="agents-section">
-          <h3>我的智能体</h3>
-          <div class="agents-grid">
-            <!-- 智能体avatar -->
-            <div
-              v-for="agent in agents"
-              :key="agent.id"
-              class="agent-card"
-            >
-              <div class="avatar-container">
-                <img
-                  :src="agent.avatar || 'https://via.placeholder.com/100'"
-                  :alt="agent.name"
-                  class="avatar-img hand"
-                  @click="handleAgentChat(agent)"
-                />
-                <div class="agent-name hand" @click="handleAgentChat(agent)">{{ agent.name }}</div>
-              </div>
-              <div class="agent-actions">
-                <button
-                  class="btn-action btn-update"
-                  @click.stop="handleUpdateAgent(agent)"
-                  title="更新智能体"
-                >
-                  更新
-                </button>
-                <button
-                  class="btn-action btn-delete"
-                  @click.stop="handleDeleteAgent(agent)"
-                  title="删除智能体"
-                >
-                  删除
-                </button>
-              </div>
+        <div class="content-wrapper">
+          <!-- 欢迎区域 -->
+          <div class="welcome-section">
+            <div class="welcome-text">
+              <h2>早安，<span class="highlight">{{ user?.nickname || user?.username || '用户' }}</span> 👋</h2>
+              <p class="subtitle">准备好开始管理您的智能助手了吗？</p>
             </div>
+            <div class="welcome-decoration">✨</div>
+          </div>
 
-            <!-- 添加智能体按钮 -->
-            <div class="agent-card add-agent" @click="showCreateModal = true">
-              <div class="avatar-container">
-                <div class="add-icon">+</div>
-                <div class="agent-name">添加智能体</div>
+          <!-- 智能体列表 -->
+          <div class="agents-section">
+            <div class="section-header">
+              <h3>我的智能体</h3>
+              <span class="badge">{{ agents.length }} 个活跃中</span>
+            </div>
+            
+            <div class="agents-grid">
+              <!-- 添加智能体按钮 (放在第一个，方便操作) -->
+              <div class="agent-card add-card" @click="showCreateModal = true">
+                <div class="add-content">
+                  <div class="add-icon-circle">+</div>
+                  <span class="add-text">创建新智能体</span>
+                </div>
+              </div>
+
+              <!-- 智能体循环 -->
+              <div
+                v-for="agent in agents"
+                :key="agent.id"
+                class="agent-card agent-item"
+                @click="handleAgentChat(agent)"
+              >
+                <div class="card-body">
+                  <div class="avatar-wrapper">
+                    <img
+                      :src="agent.avatar || 'https://via.placeholder.com/100'"
+                      :alt="agent.name"
+                      class="avatar-img"
+                    />
+                    <div class="status-dot"></div>
+                  </div>
+                  <h4 class="agent-name" :title="agent.name">{{ agent.name }}</h4>
+                  <p class="agent-desc">点击开始对话</p>
+                </div>
+                
+                <div class="card-footer">
+                  <button
+                    class="btn-action btn-edit"
+                    @click.stop="handleUpdateAgent(agent)"
+                    title="配置"
+                  >
+                    ⚙️ 配置
+                  </button>
+                  <button
+                    class="btn-action btn-del"
+                    @click.stop="handleDeleteAgent(agent)"
+                    title="删除"
+                  >
+                    🗑️
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -107,31 +125,35 @@
     </div>
 
     <!-- 创建智能体弹窗 -->
-    <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h3>创建智能体</h3>
-          <button class="modal-close" @click="showCreateModal = false">×</button>
-        </div>
-        <div class="modal-body">
-          <div class="form-group">
-            <label for="agentName">智能体名称</label>
-            <input
-              type="text"
-              id="agentName"
-              v-model="newAgentName"
-              placeholder="请输入智能体名称"
-              class="form-input"
-              @keyup.enter="handleCreateAgent"
-            />
+    <transition name="modal-fade">
+      <div v-if="showCreateModal" class="modal-overlay" @click.self="showCreateModal = false">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h3>创建智能体</h3>
+            <button class="modal-close" @click="showCreateModal = false">×</button>
+          </div>
+          <div class="modal-body">
+            <div class="form-group">
+              <label for="agentName">智能体名称</label>
+              <input
+                type="text"
+                id="agentName"
+                v-model="newAgentName"
+                placeholder="给您的助手起个名字..."
+                class="form-input"
+                @keyup.enter="handleCreateAgent"
+                ref="nameInput"
+              />
+              <p class="form-hint">好的名字有助于识别智能体的功能。</p>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn-cancel" @click="showCreateModal = false">取消</button>
+            <button class="btn-confirm" @click="handleCreateAgent" :disabled="!newAgentName.trim()">立即创建</button>
           </div>
         </div>
-        <div class="modal-footer">
-          <button class="btn-cancel" @click="showCreateModal = false">取消</button>
-          <button class="btn-confirm" @click="handleCreateAgent" :disabled="!newAgentName.trim()">确认</button>
-        </div>
       </div>
-    </div>
+    </transition>
   </div>
 </template>
 
@@ -149,46 +171,40 @@ export default {
       deletingAgentId: null
     }
   },
+  watch: {
+    // 自动聚焦输入框
+    showCreateModal(val) {
+      if (val) {
+        this.$nextTick(() => {
+          this.$refs.nameInput?.focus()
+        })
+      }
+    }
+  },
   mounted() {
-    // 获取用户信息
     this.getUserInfo()
-
-    // 检查登录状态
     this.checkLoginStatus()
-
-    // 获取智能体列表
     this.getAgentsList()
   },
   methods: {
-    // 获取用户信息
     getUserInfo() {
       this.user = api.auth.getCurrentUser()
     },
-
-    // 检查登录状态
     checkLoginStatus() {
       if (!api.auth.isLoggedIn()) {
-        // 没有登录，跳转到登录页
         this.$router.push('/login')
       }
     },
-
-    // 处理退出登录
     async handleLogout() {
       try {
-        // 使用API工具调用退出登录接口
         await api.auth.logout()
       } catch (error) {
         console.error('退出登录失败:', error)
       } finally {
-        // 无论如何都跳转到登录页
         this.$router.push('/login')
       }
     },
-
-    // 获取智能体列表
     async getAgentsList() {
-      // 新增：如果没有token，直接跳转登录
       const token = this.$root.$options.api?.getAccessToken ? this.$root.$options.api.getAccessToken() : (this.$api?.getAccessToken?.() || localStorage.getItem('access_token'))
       if (!token) {
         this.$router.push('/login')
@@ -196,32 +212,23 @@ export default {
       }
       try {
         const response = await api.agent.getUserAgentList(this.user.id)
-        // API返回格式: { agents: [...], pagination: {...} }
         this.agents = response.agents || []
       } catch (error) {
         console.error('获取智能体列表失败:', error)
         this.agents = []
       }
     },
-
-    // 处理创建智能体
     handleCreateAgent() {
       if (this.newAgentName.trim()) {
-        // 跳转到创建智能体页面
         this.$router.push({
           path: '/agents/creation',
           query: { name: this.newAgentName.trim() }
         })
-
-        // 重置表单
         this.newAgentName = ''
         this.showCreateModal = false
       }
     },
-
-    // 处理更新智能体
     handleUpdateAgent(agent) {
-      // 将智能体数据编码后通过query传递
       this.$router.push({
         path: `/agents/${agent.id}/edit`,
         query: {
@@ -229,14 +236,11 @@ export default {
         }
       })
     },
-
-    // 处理删除智能体
     async handleDeleteAgent(agent) {
       if (confirm(`确定要删除智能体"${agent.name}"吗？此操作不可恢复。`)) {
         this.deletingAgentId = agent.id
         try {
           await api.agent.deleteAgent(agent.id)
-          // 删除成功后刷新列表
           await this.getAgentsList()
         } catch (error) {
           console.error('删除智能体失败:', error)
@@ -246,7 +250,6 @@ export default {
         }
       }
     },
-
     handleAgentChat(agent) {
       this.$router.push({
         path: '/agents',
@@ -260,93 +263,143 @@ export default {
 </script>
 
 <style scoped>
+/* 引入全局变量风格 */
+:root {
+  --primary-color: #4f46e5;
+  --primary-hover: #4338ca;
+  --secondary-color: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --danger-color: #ef4444;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+* { box-sizing: border-box; }
+
 .home-container {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  font-family: 'Arial', sans-serif;
+  font-family: var(--font-sans);
+  background-color: #f9fafb;
+  color: var(--text-primary);
 }
 
-/* 导航栏样式 */
+/* ================== Navbar (统一风格) ================== */
 .navbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 24px;
-  height: 64px;
+  padding: 0 32px;
+  height: 70px;
   background-color: #ffffff;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  z-index: 100;
+  box-shadow: var(--shadow-sm);
+  z-index: 50;
+  border-bottom: 1px solid #e5e7eb;
 }
 
-.navbar-brand .brand-name {
+.navbar-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  width: 40px;
+  height: 40px;
+  background: var(--primary-color);
+  color: white;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+}
+
+.brand-name {
   font-size: 20px;
-  font-weight: 600;
-  color: #2d3748;
+  font-weight: 700;
+  color: #1f2937;
   margin: 0;
+  letter-spacing: -0.025em;
 }
 
 .navbar-user {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 20px;
 }
 
-.user-info .username {
+.user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.avatar {
+  width: 32px;
+  height: 32px;
+  background-color: #e0e7ff;
+  color: var(--primary-color);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.username {
   font-size: 14px;
   font-weight: 500;
-  color: #4a5568;
+  color: #374151;
 }
 
 .btn-logout {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  background: white;
+  color: #6b7280;
+  cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background-color: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
+  justify-content: center;
+  transition: all 0.2s;
 }
 
 .btn-logout:hover {
-  background-color: #5a67d8;
+  background-color: #fef2f2;
+  color: var(--danger-color);
+  border-color: #fecaca;
 }
 
-/* 主内容区样式 */
+/* ================== Layout & Sidebar (统一风格) ================== */
 .main-content {
   display: flex;
   flex: 1;
   overflow: hidden;
 }
 
-/* 左侧菜单栏样式 */
 .sidebar {
-  width: 200px;
-  background-color: #f7fafc;
-  border-right: 1px solid #e2e8f0;
-  display: flex;
-  flex-direction: column;
-}
-
-/* 菜单样式 */
-.menu {
-  padding: 16px 0;
-  flex: 1;
+  width: 240px;
+  background-color: #ffffff;
+  border-right: 1px solid #e5e7eb;
+  padding: 24px 16px;
+  flex-shrink: 0;
 }
 
 .menu-list {
   list-style: none;
   padding: 0;
   margin: 0;
-}
-
-.menu-item {
-  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .menu-link {
@@ -355,122 +408,193 @@ export default {
   gap: 12px;
   padding: 12px 16px;
   text-decoration: none;
-  color: #4a5568;
-  font-size: 14px;
+  color: #4b5563;
+  font-size: 15px;
   font-weight: 500;
+  border-radius: 8px;
   transition: all 0.2s;
-  border-radius: 0 6px 6px 0;
 }
 
 .menu-link:hover {
-  background-color: #edf2f7;
-  color: #2d3748;
+  background-color: #f3f4f6;
+  color: #111827;
 }
 
 .menu-link.active {
-  background-color: #667eea;
-  color: white;
+  background-color: #e0e7ff;
+  color: var(--primary-color);
+  font-weight: 600;
 }
 
-.menu-icon {
-  font-size: 18px;
-}
-
-.menu-text {
-  flex: 1;
-}
-
-/* 内容区样式 */
+/* ================== Main Content Area ================== */
 .content {
   flex: 1;
-  padding: 24px;
-  background-color: #f8fafc;
+  padding: 40px;
+  background-color: #f9fafb;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
 }
 
-/* 欢迎区域样式 */
+.content-wrapper {
+  max-width: 1400px;
+  margin: 0 auto;
+}
+
+/* Welcome Section */
 .welcome-section {
-  background-color: white;
-  border-radius: 12px;
+  background: linear-gradient(135deg, #ffffff 0%, #f0f7ff 100%);
+  border: 1px solid #e0e7ff;
+  border-radius: 16px;
   padding: 32px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  text-align: center;
+  margin-bottom: 32px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.welcome-text h2 {
+  font-size: 28px;
+  margin: 0 0 8px 0;
+  color: #1f2937;
+  font-weight: 800;
+}
+
+.highlight {
+  background: linear-gradient(120deg, #4f46e5 0%, #7c3aed 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.subtitle {
+  margin: 0;
+  color: #6b7280;
+  font-size: 16px;
+}
+
+.welcome-decoration {
+  font-size: 48px;
+  opacity: 0.8;
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-10px); }
+  100% { transform: translateY(0px); }
+}
+
+/* Agents Section */
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   margin-bottom: 24px;
 }
 
-.welcome-section h2 {
-  margin: 0 0 16px 0;
-  font-size: 28px;
-  font-weight: 600;
-  color: #2d3748;
-}
-
-.welcome-message {
-  margin: 0;
-  font-size: 16px;
-  color: #718096;
-}
-
-/* 智能体区域样式 */
-.agents-section {
-  background-color: white;
-  border-radius: 12px;
-  padding: 24px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-}
-
-.agents-section h3 {
-  margin: 0 0 24px 0;
+.section-header h3 {
   font-size: 20px;
-  font-weight: 600;
-  color: #2d3748;
+  font-weight: 700;
+  margin: 0;
+  color: #1f2937;
 }
 
-/* 智能体网格样式 */
+.section-header .badge {
+  background: #dcfce7;
+  color: #166534;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Agents Grid */
 .agents-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 24px;
-  justify-items: center;
 }
 
-/* 智能体卡片样式 */
+/* Common Card Style */
 .agent-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 16px;
-  background-color: white;
-  border-radius: 12px;
-  border: 1px solid #e2e8f0;
-  transition: all 0.2s ease;
-  width: 100%;
-  max-width: 150px;
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #f3f4f6;
+  box-shadow: var(--shadow-md);
+  transition: all 0.3s ease;
+  overflow: hidden;
+  position: relative;
+  height: 260px; /* 固定高度确保整齐 */
 }
 
 .agent-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-5px);
+  box-shadow: var(--shadow-lg);
+  border-color: #e0e7ff;
 }
 
-.agent-card.add-agent {
+/* Add Agent Card */
+.add-card {
+  border: 2px dashed #d1d5db;
+  background: #f9fafb;
+  box-shadow: none;
   cursor: pointer;
-  border: 2px dashed #cbd5e0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.agent-card.add-agent:hover {
-  border-color: #667eea;
-  background-color: #f7fafc;
+.add-card:hover {
+  border-color: var(--primary-color);
+  background: #eef2ff;
 }
 
-.avatar-container {
+.add-content {
+  text-align: center;
+  color: #6b7280;
+}
+
+.add-icon-circle {
+  width: 56px;
+  height: 56px;
+  background: white;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 32px;
+  color: var(--primary-color);
+  margin: 0 auto 12px;
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.2s;
+}
+
+.add-card:hover .add-icon-circle {
+  transform: scale(1.1);
+  background: var(--primary-color);
+  color: white;
+}
+
+.add-text { font-weight: 600; font-size: 15px; }
+
+/* Agent Item Card */
+.agent-item {
+  display: flex;
+  flex-direction: column;
+  cursor: pointer;
+}
+
+.card-body {
+  padding: 24px;
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  width: 100%;
-  margin-bottom: 12px;
+  text-align: center;
+}
+
+.avatar-wrapper {
+  position: relative;
+  margin-bottom: 16px;
 }
 
 .avatar-img {
@@ -478,81 +602,78 @@ export default {
   height: 80px;
   border-radius: 50%;
   object-fit: cover;
-  border: 2px solid #e2e8f0;
-  margin-bottom: 8px;
+  border: 4px solid white;
+  box-shadow: 0 0 0 1px #e5e7eb;
 }
 
-.add-agent .avatar-container {
-  justify-content: center;
-  margin-bottom: 0;
-}
-
-.add-icon {
-  font-size: 32px;
-  color: #a0aec0;
-  font-weight: 300;
-  margin-bottom: 8px;
+.status-dot {
+  width: 14px;
+  height: 14px;
+  background-color: #10b981;
+  border: 2px solid white;
+  border-radius: 50%;
+  position: absolute;
+  bottom: 5px;
+  right: 5px;
 }
 
 .agent-name {
-  font-size: 14px;
-  color: #4a5568;
-  font-weight: 500;
-  text-align: center;
-  word-break: break-word;
-  line-height: 1.4;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin: 0 0 8px 0;
+  width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-/* 操作按钮样式 */
-.agent-actions {
+.agent-desc {
+  font-size: 13px;
+  color: #9ca3af;
+  margin: 0;
+}
+
+/* Card Footer Actions */
+.card-footer {
+  padding: 12px 16px;
+  border-top: 1px solid #f3f4f6;
+  background: #fdfdfd;
   display: flex;
   gap: 8px;
-  width: 100%;
-  margin-top: 8px;
 }
 
 .btn-action {
   flex: 1;
-  padding: 6px 12px;
-  border: none;
-  border-radius: 6px;
-  font-size: 12px;
+  padding: 8px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: all 0.2s;
 }
 
-.btn-update {
-  background-color: #667eea;
-  color: white;
+.btn-edit {
+  color: #4b5563;
+  background: #f3f4f6;
 }
+.btn-edit:hover { background: #e5e7eb; color: #111827; }
 
-.btn-update:hover {
-  background-color: #5a67d8;
+.btn-del {
+  color: #ef4444;
+  background: #fef2f2;
+  flex: 0 0 40px; /* 小一点的删除按钮 */
 }
+.btn-del:hover { background: #fee2e2; border-color: #fecaca; }
 
-.btn-delete {
-  background-color: #fc8181;
-  color: white;
-}
-
-.btn-delete:hover {
-  background-color: #f56565;
-}
-
-.btn-action:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* 弹窗样式 */
+/* ================== Modern Modal ================== */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.5);
+  inset: 0;
+  background-color: rgba(17, 24, 39, 0.4);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -560,135 +681,99 @@ export default {
 }
 
 .modal-content {
-  background-color: white;
-  border-radius: 12px;
-  width: 100%;
-  max-width: 400px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  animation: modalFadeIn 0.3s ease;
-}
-
-@keyframes modalFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  background: white;
+  border-radius: 20px;
+  width: 90%;
+  max-width: 450px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
 }
 
 .modal-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid #f3f4f6;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid #e2e8f0;
 }
 
-.modal-header h3 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #2d3748;
-}
+.modal-header h3 { margin: 0; font-size: 18px; font-weight: 700; color: #111827; }
 
 .modal-close {
-  background: none;
+  background: transparent;
   border: none;
   font-size: 24px;
-  color: #a0aec0;
+  color: #9ca3af;
   cursor: pointer;
-  padding: 0;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  transition: all 0.2s ease;
+  line-height: 1;
 }
+.modal-close:hover { color: #4b5563; }
 
-.modal-close:hover {
-  background-color: #f7fafc;
-  color: #4a5568;
-}
-
-.modal-body {
-  padding: 24px;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
+.modal-body { padding: 24px; }
 
 .form-group label {
   display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
   margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: #4a5568;
 }
 
 .form-input {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
   font-size: 14px;
-  color: #2d3748;
-  transition: all 0.2s ease;
-  box-sizing: border-box;
+  color: #111827;
+  transition: all 0.2s;
+  background: #f9fafb;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: #667eea;
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  border-color: var(--primary-color);
+  background: white;
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
+.form-hint { font-size: 12px; color: #9ca3af; margin-top: 8px; }
+
 .modal-footer {
+  padding: 16px 24px;
+  border-top: 1px solid #f3f4f6;
   display: flex;
   justify-content: flex-end;
   gap: 12px;
-  padding: 20px 24px;
-  border-top: 1px solid #e2e8f0;
-}
-
-.btn-cancel, .btn-confirm {
-  padding: 10px 20px;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  border: none;
 }
 
 .btn-cancel {
-  background-color: #f7fafc;
-  color: #4a5568;
-  border: 1px solid #e2e8f0;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: white;
+  border: 1px solid #e5e7eb;
+  color: #374151;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
 }
-
-.btn-cancel:hover {
-  background-color: #edf2f7;
-}
+.btn-cancel:hover { background: #f9fafb; border-color: #d1d5db; }
 
 .btn-confirm {
-  background-color: #667eea;
+  padding: 10px 18px;
+  border-radius: 8px;
+  background: var(--primary-color);
+  border: none;
   color: white;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
 }
+.btn-confirm:hover { background: var(--primary-hover); }
+.btn-confirm:disabled { background: #a5b4fc; cursor: not-allowed; }
 
-.btn-confirm:hover {
-  background-color: #5a67d8;
-}
-
-.btn-confirm:disabled {
-  background-color: #a0aec0;
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-.hand { cursor:pointer; }
+/* Transitions */
+.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.2s ease, transform 0.2s ease; }
+.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; transform: scale(0.95); }
 </style>

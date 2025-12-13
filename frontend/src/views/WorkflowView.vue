@@ -40,6 +40,12 @@
                 <span class="menu-text">知识库</span>
               </router-link>
             </li>
+            <li class="menu-item">
+              <router-link to="/conversation" class="menu-link" active-class="active">
+                <span class="menu-icon">💬</span>
+                <span class="menu-text">会话管理</span>
+              </router-link>
+            </li>
           </ul>
         </nav>
       </aside>

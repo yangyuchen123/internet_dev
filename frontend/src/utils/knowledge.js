@@ -81,5 +81,18 @@ export const knowledgeAPI = {
       console.error('根据类别删除失败:', error)
       throw error
     }
+  },
+  
+  /**
+   * 获取用户向量库中的数据条数
+   */
+  async countVector(data) {
+    try {
+      const response = await post('/rag/count', data)
+      return response
+    } catch (error) {
+      console.error('获取向量库数据条数失败:', error)
+      throw error
+    }
   }
 }
