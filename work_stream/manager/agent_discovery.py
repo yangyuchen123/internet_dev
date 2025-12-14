@@ -1,10 +1,12 @@
 """
 Agent和MCP工具发现服务
-用于动态发现plug-in-service提供的agent和MCP工具
+用于从数据库获取agent信息和MCP工具发现
 """
 import httpx
+import mysql.connector
 from typing import Dict, List, Any, Optional
 from fastapi import HTTPException
+import os
 
 class AgentDiscoveryService:
     """Agent和MCP工具发现服务"""
@@ -12,24 +14,112 @@ class AgentDiscoveryService:
     def __init__(self, plugin_server_url: str = "http://localhost:3000"):
         self.plugin_server_url = plugin_server_url
         self.client = httpx.AsyncClient()
+        self.db_config = {
+            'host': os.getenv('DB_HOST', 'localhost'),
+            'port': int(os.getenv('DB_PORT', '3306')),
+            'user': os.getenv('DB_USER', 'test_user'),
+            'password': os.getenv('DB_PASSWORD', '12345678'),
+            'database': os.getenv('DB_NAME', 'ai_agent_db')
+        }
     
     async def discover_agents(self) -> List[Dict[str, Any]]:
         """
-        发现所有可用的agent
+        从数据库获取所有可用的agent
         
         Returns:
-            List[Dict]: agent列表，包含id、name、category等信息
+            List[Dict]: agent列表，包含id、name、category、url、connect_type等信息
         """
         try:
-            # 获取公开agent列表
-            response = await self.client.get(f"{self.plugin_server_url}/agent/public")
-            if response.status_code == 200:
-                data = response.json()
-                return data.get("data", {}).get("agents", [])
-            else:
-                raise HTTPException(response.status_code, f"获取agent列表失败: {response.text}")
+            # 连接数据库
+            connection = mysql.connector.connect(**self.db_config)
+            cursor = connection.cursor(dictionary=True)
+            
+            # 查询所有公开的agent
+            query = """
+                SELECT id, name, description, avatar, category, url, connect_type, 
+                       is_tested, is_public, created_at, updated_at
+                FROM agent 
+                WHERE is_public = 1 
+                ORDER BY updated_at DESC
+            """
+            cursor.execute(query)
+            agents = cursor.fetchall()
+            
+            # 关闭数据库连接
+            cursor.close()
+            connection.close()
+            
+            # 格式化数据以匹配原有接口
+            formatted_agents = []
+            for agent in agents:
+                formatted_agents.append({
+                    "id": agent["id"],
+                    "name": agent["name"],
+                    "description": agent["description"],
+                    "avatar": agent["avatar"],
+                    "category": agent["category"],
+                    "url": agent["url"],
+                    "connectType": agent["connect_type"],
+                    "isTested": bool(agent["is_tested"]),
+                    "isPublic": bool(agent["is_public"]),
+                    "createdAt": agent["created_at"].isoformat() if agent["created_at"] else None,
+                    "updatedAt": agent["updated_at"].isoformat() if agent["updated_at"] else None
+                })
+            
+            return formatted_agents
         except Exception as e:
-            raise HTTPException(500, f"发现agent失败: {str(e)}")
+            raise HTTPException(500, f"从数据库获取agent列表失败: {str(e)}")
+    
+    async def get_agent_by_id(self, agent_id: int) -> Dict[str, Any]:
+        """
+        根据agent_id获取单个agent的详细信息
+        
+        Args:
+            agent_id: agent ID
+            
+        Returns:
+            Dict: agent详细信息
+        """
+        try:
+            # 连接数据库
+            connection = mysql.connector.connect(**self.db_config)
+            cursor = connection.cursor(dictionary=True)
+            
+            # 查询指定agent
+            query = """
+                SELECT id, name, description, avatar, category, url, connect_type, 
+                       is_tested, is_public, created_at, updated_at
+                FROM agent 
+                WHERE id = %s
+            """
+            cursor.execute(query, (agent_id,))
+            agent = cursor.fetchone()
+            
+            # 关闭数据库连接
+            cursor.close()
+            connection.close()
+            
+            if not agent:
+                raise HTTPException(404, f"未找到ID为 {agent_id} 的agent")
+            
+            # 格式化数据
+            formatted_agent = {
+                "id": agent["id"],
+                "name": agent["name"],
+                "description": agent["description"],
+                "avatar": agent["avatar"],
+                "category": agent["category"],
+                "url": agent["url"],
+                "connectType": agent["connect_type"],
+                "isTested": bool(agent["is_tested"]),
+                "isPublic": bool(agent["is_public"]),
+                "createdAt": agent["created_at"].isoformat() if agent["created_at"] else None,
+                "updatedAt": agent["updated_at"].isoformat() if agent["updated_at"] else None
+            }
+            
+            return formatted_agent
+        except Exception as e:
+            raise HTTPException(500, f"获取agent信息失败: {str(e)}")
     
     async def discover_mcp_tools(self, client_id: str) -> List[Dict[str, Any]]:
         """

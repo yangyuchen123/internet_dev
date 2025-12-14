@@ -187,14 +187,13 @@ async def _add_dynamic_agent_node(workflow: StateGraph, node_config):
                 result = agent_manager.mcp_client.execute_mcp_operation(node_config.client_id, operation)
             elif node_config.agent_id:
                 # 使用agent对应的MCP客户端
-                # 这里需要根据agent_id来找到对应的MCP客户端
-                # 暂时使用agent_id作为client_id的简单映射
-                agent_client_id = f"agent_{node_config.agent_id}"
-                if agent_client_id not in agent_manager.mcp_client_connections:
+                # client_id直接使用agent_id，因为它们是同一个字段
+                client_id = str(node_config.agent_id)
+                if client_id not in agent_manager.mcp_client_connections:
                     # 尝试动态连接agent
-                    await _connect_agent_mcp_client(node_config.agent_id, agent_client_id)
+                    await _connect_agent_mcp_client(node_config.agent_id, client_id)
                 
-                result = agent_manager.mcp_client.execute_mcp_operation(agent_client_id, operation)
+                result = agent_manager.mcp_client.execute_mcp_operation(client_id, operation)
             else:
                 raise HTTPException(400, "无法确定使用哪个MCP客户端")
             
@@ -216,31 +215,47 @@ async def _add_dynamic_agent_node(workflow: StateGraph, node_config):
 
 async def _connect_agent_mcp_client(agent_id: int, client_id: str):
     """
-    连接agent对应的MCP客户端
+    连接agent对应的MCP客户端，从数据库获取agent信息
     
     Args:
         agent_id: agent ID
         client_id: 客户端ID
     """
     try:
-        # 获取agent信息
-        agents = await agent_discovery_service.discover_agents()
-        agent = next((a for a in agents if a.get("id") == agent_id), None)
+        # 从数据库获取agent详细信息
+        agent = await agent_discovery_service.get_agent_by_id(agent_id)
         
         if not agent:
             raise HTTPException(404, f"未找到ID为 {agent_id} 的agent")
         
         # 根据agent信息构建MCP连接配置
-        # 这里需要根据agent的具体配置来构建
-        # 暂时使用默认配置
+        # 优先使用agent配置中的URL，否则根据环境自动选择
+        agent_url = agent.get("url")
+        if agent_url:
+            # 如果agent配置中有URL，直接使用
+            server_url = agent_url
+        else:
+            # 否则根据环境自动选择地址
+            import os
+            if os.path.exists("/.dockerenv"):
+                # Docker环境中使用容器名
+                server_url = "http://plugin-server:3000"
+            else:
+                # 本地开发环境使用localhost
+                server_url = "http://localhost:3000"
+        
+        # 构建server_config
         server_config = {
-            "url": "http://localhost:3000",  # 假设agent在本地运行
+            "url": server_url,
             "headers": {},
             "bearerToken": ""
         }
         
-        # 建立MCP连接
-        await agent_manager.connect_mcp_client(client_id, server_config)
+        # 建立MCP连接，使用从数据库获取的URL
+        await agent_manager.connect_mcp_client(
+            client_id=client_id,
+            server_config=server_config
+        )
         
     except Exception as e:
         raise HTTPException(500, f"连接agent MCP客户端失败: {str(e)}")
@@ -288,7 +303,8 @@ def create_dynamic_agent_node_config(agent_id: int = None,
         if client_id:
             node_id = f"mcp://{client_id}/{tool_name}"
         else:
-            node_id = f"agent_{agent_id}_{tool_name}"
+            # 直接使用agent_id作为节点ID的一部分，因为client_id与agent_id是同一个字段
+            node_id = f"mcp://{agent_id}/{tool_name}"
     
     return NodeConfig(
         id=node_id,
