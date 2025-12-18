@@ -49,20 +49,31 @@ class VectorStore:
     def count(self, user: str = None, category: str = None) -> int:
         try:
             # 构建过滤条件
-            filter_conditions = []
+            conditions = []
             if user:
-                filter_conditions.append({"key": "user", "match": {"value": user}})
+                conditions.append(FieldCondition(key="user", match=MatchValue(value=user)))
             if category:
-                filter_conditions.append({"key": "category", "match": {"value": category}})
+                conditions.append(FieldCondition(key="category", match=MatchValue(value=category)))
             
-            # 如果有过滤条件，则使用过滤查询
-            if filter_conditions:
-                filter_condition = {"must": filter_conditions}
-                return self.client.count(collection_name=self.collection_name, filter=filter_condition).count
+            # 如果有过滤条件，使用scroll方法进行过滤计数
+            if conditions:
+                filters = Filter(must=conditions)
+                # 使用scroll获取所有匹配的点，然后计算数量
+                results = self.client.scroll(
+                    collection_name=self.collection_name,
+                    scroll_filter=filters,
+                    limit=10000,  # 设置一个较大的限制
+                    with_payload=False,
+                    with_vectors=False
+                )
+                # scroll返回的是元组 (points, next_page_offset)，points是匹配的点列表
+                points = results[0]
+                return len(points)
             else:
                 # 无过滤条件，返回所有记录数
                 return self.client.count(collection_name=self.collection_name).count
-        except Exception:
+        except Exception as e:
+            print(f"[VectorStore] count方法出错: {e}")
             return 0
 
     def add_texts(self, texts: List[str], metas: List[Dict[str, Any]]):
@@ -88,14 +99,14 @@ class VectorStore:
         vecs = np.asarray(vecs, dtype='float32')
         
         with self.lock:
-            # 记录添加前的索引大小（传递用户参数）
-            before_count = self.count(user=user)
+            # 使用时间戳+索引作为唯一ID，避免ID冲突
+            timestamp = int(time.time() * 1000)
             
             # 准备要添加的点
             points = []
             for i, (vec, meta) in enumerate(zip(vecs, metas)):
-                # 使用自增整数作为唯一ID
-                point_id = before_count + i + 1
+                # 使用时间戳+索引作为唯一ID，确保不重复
+                point_id = timestamp + i
                 points.append(PointStruct(id=point_id, vector=vec.tolist(), payload=meta))
             
             # 添加到Qdrant
@@ -103,14 +114,14 @@ class VectorStore:
             
             # 记录添加后的索引大小（传递用户参数）
             after_count = self.count(user=user)
-            print(f"[VectorStore] 索引更新: 从 {before_count} 条增加到 {after_count} 条记录")
+            print(f"[VectorStore] 索引更新: 当前共有 {after_count} 条记录")
         
             # 保存更改（Qdrant自动保存）
             print(f"[VectorStore] 数据已保存到Qdrant")
 
     def search(self, q: str, topK: int = 5, category: Optional[str] = None, user: str = None) -> List[Dict]:
         """
-        在Qdrant中检索相似文本 (使用 query_points 的修正版)
+        在Qdrant中检索相似文本 (使用query_points方法)
         """
         # 生成查询向量
         qv = self.embedder.encode([q])
@@ -128,26 +139,32 @@ class VectorStore:
         filters = Filter(must=conditions) if conditions else None
 
         
-        # 使用 query_points (确定你的客户端有这个方法)
+        # 使用query_points方法进行向量相似度搜索
         results = self.client.query_points(
             collection_name=self.collection_name,
-            query=qv[0].tolist(),  # 在 query_points 中参数名通常是 query
+            query=qv[0].tolist(),
             query_filter=filters,
             limit=topK,
             with_payload=True,
             with_vectors=False
         )
         
-        # 格式化结果
+        # 格式化结果，按相似度分数排序
         res = []
-        # --- 核心修复：必须访问 .points 属性 ---
-        # query_points 返回的是一个对象，包含 points 列表
+        # query_points返回的对象包含points属性
         points_list = results.points 
         
         for result in points_list:
             item = dict(result.payload)
             item['score_vec'] = float(result.score)
             res.append(item)
+            
+        # 按相似度分数降序排序，确保最高相似度的结果排在前面
+        res.sort(key=lambda x: x['score_vec'], reverse=True)
+            
+        print(f"[VectorStore] 搜索查询: '{q}'，返回 {len(res)} 条结果")
+        if res:
+            print(f"[VectorStore] 最高相似度分数: {res[0]['score_vec']:.4f}")
             
         return res
     
