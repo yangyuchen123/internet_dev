@@ -23,7 +23,7 @@ ENV PYTHONUNBUFFERED=1 \
 # 复制requirements.txt并安装Python依赖
 COPY requirements.txt .
 RUN pip install --upgrade pip setuptools && \
-    pip install -r requirements.txt
+    pip install -r requirements.txt -i https://pypi.tuna.tsinghua.edu.cn/simple/ --trusted-host pypi.tuna.tsinghua.edu.cn
 
 # 复制RAG服务代码
 COPY --chown=appuser:appuser . .

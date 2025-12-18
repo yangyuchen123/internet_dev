@@ -214,32 +214,32 @@ services:
       - app-network
     restart: unless-stopped
 
-  workstream:
-    build:
-      context: ./work_stream
-      dockerfile: Dockerfile
-    image: ${PROJECT_NAME:-ai-agent-platform}-workstream:latest
-    container_name: ${PROJECT_NAME:-ai-agent-platform}-workstream
-    environment:
-      OPENAI_API_KEY: ${OPENAI_API_KEY}      # 从主机环境传递 OpenAI API Key
-      TZ: ${TZ:-Asia/Shanghai}
-      DB_HOST: mysql
-      DB_PORT: ${MYSQL_PORT:-3306}
-      DB_USER: ${MYSQL_USER:-test_user}
-      DB_PASSWORD: ${MYSQL_PASSWORD:-12345678}
-      DB_NAME: ${MYSQL_DATABASE:-ai_agent_db}
-      DOCKER_ENV: true
-    ports:
-      - "8001:8001"
-    volumes:
-      - ./work_stream/.env:/app/.env
-    depends_on:
-      - mysql
-      - backend
-      - plugin-server
-    networks:
-      - app-network
-    restart: unless-stopped
+  # workstream:
+  #   build:
+  #     context: ./work_stream
+  #     dockerfile: Dockerfile
+  #   image: ${PROJECT_NAME:-ai-agent-platform}-workstream:latest
+  #   container_name: ${PROJECT_NAME:-ai-agent-platform}-workstream
+  #   environment:
+  #     OPENAI_API_KEY: ${OPENAI_API_KEY}      # 从主机环境传递 OpenAI API Key
+  #     TZ: ${TZ:-Asia/Shanghai}
+  #     DB_HOST: mysql
+  #     DB_PORT: ${MYSQL_PORT:-3306}
+  #     DB_USER: ${MYSQL_USER:-test_user}
+  #     DB_PASSWORD: ${MYSQL_PASSWORD:-12345678}
+  #     DB_NAME: ${MYSQL_DATABASE:-ai_agent_db}
+  #     DOCKER_ENV: true
+  #   ports:
+  #     - "8001:8001"
+  #   volumes:
+  #     - ./work_stream/.env:/app/.env
+  #   depends_on:
+  #     - mysql
+  #     - backend
+  #     - plugin-server
+  #   networks:
+  #     - app-network
+  #   restart: unless-stopped
 
 volumes:
   backend_mysql_data:
